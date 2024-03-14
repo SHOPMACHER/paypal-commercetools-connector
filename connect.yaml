@@ -11,6 +11,7 @@ deployAs:
           description: commercetools Composable Commerce API region
         - key: PAYPAL_CLIENT_ID
           description: PayPal Client Id
+          required: true
         - key: PAYPAL_ENVIRONMENT
           description: PayPal environment (Sandbox or Production)
         - key: SMTP_HOST
@@ -32,6 +33,7 @@ deployAs:
           description: commercetools Composable Commerce client scope
         - key: PAYPAL_CLIENT_SECRET
           description: PayPal Client Secret
+          required: true
         - key: SMTP_PASSWORD
           description: SMTP Password for sending pay upon invoice mail
   - name: paypal-commercetools-custom-application
@@ -39,13 +41,16 @@ deployAs:
     endpoint: /
     configuration:
       standardConfiguration:
-        - key: APPLICATION_ID
+        - key: CUSTOM_APPLICATION_ID
           description: The Custom Application ID is provided when you add a Custom Application in the Merchant Center
           required: true
         - key: CLOUD_IDENTIFIER
           description: The identifier of the cloud Region that the Custom Application uses to connect to Composable Commerce. The values map to the actual Merchant Center API URL for that Region
           required: true
           default: gcp-eu
+        - key: ENTRY_POINT_URI_PATH
+          description: The Application entry point URI path
+          required: true
   - name: paypal-commercetools-events
     applicationType: event
     endpoint: /paypal-commercetools-events

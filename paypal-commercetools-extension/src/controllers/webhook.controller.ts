@@ -12,6 +12,7 @@ import { logger } from '../utils/logger.utils';
 
 async function verifyWebhookSignature(request: Request) {
   const webhookId = await getWebhookId();
+  console.log(webhookId);
   if (!webhookId) {
     throw new CustomError(500, 'WebhookId is missing');
   }

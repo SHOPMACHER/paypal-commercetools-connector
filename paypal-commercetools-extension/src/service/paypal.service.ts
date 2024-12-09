@@ -405,8 +405,8 @@ export const getWebhookId = async () => {
   const gateway = await getPayPalWebhooksGateway();
   const webhooks = await gateway.webhooksList('APPLICATION');
 
-  console.log(webhookUrl);
-  console.log(webhooks.data.webhooks?.map((webhook) => webhook.url));
+  logger.info(webhookUrl);
+  logger.info(webhooks.data.webhooks?.map((webhook) => webhook.url));
 
   const webhook = webhooks.data.webhooks?.find(
     (webhook) => webhook.url === webhookUrl

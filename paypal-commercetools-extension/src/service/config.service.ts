@@ -1,6 +1,7 @@
 import { createApiRoot } from '../client/create.client';
 import { AccessTokenObject, PayPalSettings } from '../types/index.types';
 import { logger } from '../utils/logger.utils';
+import { GRAPHQL_CUSTOMOBJECT_CONTAINER_NAME, GRAPHQL_WEBHOOKURL_KEY_NAME } from "../constants";
 
 export const getSettings = async () => {
   try {
@@ -21,6 +22,26 @@ export const getSettings = async () => {
     return undefined;
   }
 };
+
+export const getWebhookUrl = async () => {
+  try {
+    const apiRoot = createApiRoot();
+    return (
+      await apiRoot
+        .customObjects()
+        .withContainerAndKey({
+          container: GRAPHQL_CUSTOMOBJECT_CONTAINER_NAME,
+          key: GRAPHQL_WEBHOOKURL_KEY_NAME,
+        })
+        .get()
+        .execute()
+    ).body.value;
+  } catch (e) {
+    logger.error('Failed to load webhook url', e);
+    return '';
+  }
+};
+
 export const getCachedAccessToken = async () => {
   try {
     const apiRoot = createApiRoot();

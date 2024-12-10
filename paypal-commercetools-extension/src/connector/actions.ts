@@ -8,6 +8,7 @@ import {
   CUSTOM_OBJECT_DEFAULT_VALUES,
   GRAPHQL_CUSTOMOBJECT_CONTAINER_NAME,
   GRAPHQL_CUSTOMOBJECT_KEY_NAME,
+  GRAPHQL_WEBHOOKURL_KEY_NAME,
 } from '../constants';
 import { findMatchingExtension } from '../service/commercetools.service';
 import {
@@ -388,7 +389,8 @@ export async function createCustomPaymentInteractionType(
 }
 
 export async function createAndSetCustomObject(
-  apiRoot: ByProjectKeyRequestBuilder
+  apiRoot: ByProjectKeyRequestBuilder,
+  webhookUrl: string
 ): Promise<void> {
   let existingSettings: Record<string, any>;
   try {
@@ -417,6 +419,17 @@ export async function createAndSetCustomObject(
         key: GRAPHQL_CUSTOMOBJECT_KEY_NAME,
         container: GRAPHQL_CUSTOMOBJECT_CONTAINER_NAME,
         value: settingsPayload,
+      },
+    })
+    .execute();
+
+  await apiRoot
+    .customObjects()
+    .post({
+      body: {
+        key: GRAPHQL_WEBHOOKURL_KEY_NAME,
+        container: GRAPHQL_CUSTOMOBJECT_CONTAINER_NAME,
+        value: webhookUrl,
       },
     })
     .execute();

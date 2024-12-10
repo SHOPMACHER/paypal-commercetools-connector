@@ -2,6 +2,7 @@ export const GRAPHQL_CUSTOMOBJECT_CONTAINER_NAME =
   'paypal-commercetools-connector';
 
 export const GRAPHQL_CUSTOMOBJECT_KEY_NAME = 'settings';
+export const GRAPHQL_WEBHOOKURL_KEY_NAME = 'webhookUrl';
 
 export const CUSTOM_OBJECT_DEFAULT_VALUES = {
   merchantId: '',

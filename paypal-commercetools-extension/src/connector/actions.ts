@@ -191,7 +191,7 @@ const customFieldsDefinitionData: Record<
   [PAYPAL_PAYMENT_INTERACTION_TYPE_KEY]: [
     { name: 'type', inputHint: 'SingleLine' },
     { name: 'data', inputHint: 'MultiLine' },
-    { name: 'timestamp', typeName: 'DateTime' },
+    { name: 'timestamp', typeName: 'String' },
   ],
 };
 

@@ -157,8 +157,7 @@ const mapCommercetoolsLineItemsToPayPalItems = (
   isPayUponInvoice: boolean,
   locale?: string
 ) => {
-  /*to avoid possible rounding issues if tax lead to fractional cent amounts in single commercetools line item price
-  mapping is done in a way: commercetools - item:socks, quantity:7; PayPal - item:socks (x7), quantity:1 */
+  /* line item price mapping is done in a way: commercetools - item:socks, quantity:7; PayPal - item:socks (x7), quantity:1 to avoid issues with different commercetools rounding modes (if three commercetools items after half even price rounding in total cost 1234 cents - if using mapping with quantity 3, price will be 411,333333333... and total price will not match properly */
 
   const name = lineItem.name[locale ?? Object.keys(lineItem.name)[0]];
   const relevantPrice = isLineItemLevel
@@ -222,6 +221,7 @@ const mapCommercetoolsLineItemsToPayPalItems = (
       };
     }
   }
+
   return mappedItem;
 };
 
@@ -245,9 +245,9 @@ export const mapValidCommercetoolsLineItemsToPayPalItems = (
       locale
     )
   );
-  if (payPalItems.some((item) => parseFloat(item.unit_amount.value) < 0))
-    return null;
-  return payPalItems;
+  return payPalItems.some((item) => parseFloat(item.unit_amount.value) < 0)
+    ? null
+    : payPalItems;
 };
 
 export const mapCommercetoolsCartToPayPalPriceBreakdown = ({
@@ -297,10 +297,11 @@ export const mapCommercetoolsCartToPayPalPriceBreakdown = ({
     shipping: {
       currency_code: currencyCode,
       value: mapCommercetoolsMoneyToPayPalMoney({
+        // in commercetools shipping discount is included in total discount and can't be easily separated - so amount before discount applied is used here
         centAmount:
           shippingInfo?.taxedPrice?.totalGross?.centAmount ??
           shippingInfo?.price.centAmount ??
-          0, //in commercetools shipping discount is included in total discount and can't be easily separated - so amount before discount applied is used here
+          0,
         fractionDigits,
         currencyCode,
         type,

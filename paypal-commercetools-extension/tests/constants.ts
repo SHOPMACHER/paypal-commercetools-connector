@@ -7,6 +7,7 @@ import {
   Payment,
   Price,
   ProductVariant,
+  TaxCalculationMode,
   TaxedPrice,
   TaxRate,
 } from '@commercetools/platform-sdk';
@@ -74,7 +75,7 @@ type RelevantQuantityIndependentLineItemProps = Pick<
 > & {
   variant: Pick<ProductVariant, 'sku'>;
   taxRate?: Pick<TaxRate, 'amount'>;
-  price: Pick<Price, 'value'>;
+  price: Pick<Price, 'value' | 'discounted'>;
 };
 
 type TaxedPricePropsImportantForMappingTests = Omit<TaxedPrice, 'taxPortions'>;
@@ -259,30 +260,54 @@ export const multipleItemsCartWithUnitPriceTaxMode: CartPropsImportantForMapping
 const generateLineItemProps = (
   referenceName: string,
   itemPrice: number,
-  lineItemMode?: LineItemMode,
-  taxRate = DEFAULT_EU_TAX_RATE
+  dsicountedPrice?: number,
+  lineItemMode?: LineItemMode
 ): RelevantQuantityIndependentLineItemProps => ({
   name: {
     en: `name${referenceName}`,
   },
   variant: { sku: `sku${referenceName}` },
-  taxRate: { amount: taxRate },
+  taxRate: { amount: DEFAULT_EU_TAX_RATE },
   lineItemMode: lineItemMode ?? 'Standard',
-  price: { value: centPrice(itemPrice) },
+  price: {
+    value: centPrice(itemPrice),
+    discounted: dsicountedPrice
+      ? {
+          value: centPrice(dsicountedPrice),
+          discount: {
+            typeId: 'product-discount',
+            id: 'irrelevantForMapping',
+          },
+        }
+      : undefined,
+  },
 });
 
-const testLineItemsBaseData = {
+const testLineItemsBaseData: {
+  [key: string]: RelevantQuantityIndependentLineItemProps;
+} = {
   //all test data are based on sandbox products, corresponding product can be found by name
   defaultItem: { ...generateLineItemProps('amanda gray', 22375) }, // default ct item type, included standard EU tax, no discounts
   doubleDiscountedItemWithGift: {
     ...generateLineItemProps('amanda brown', 23134), // this item forces the cart to get total discount
   },
+  giftLineItem: {
+    ...generateLineItemProps('amanda brown', 0, undefined, 'GiftLineItem'),
+  }, //is automatically added to cart if at least one doubleDiscountedItemWithGift is present, if present quantity is 1 always, if removed once - will never reappear in this cart
   productDiscountItem: {
     ...generateLineItemProps('amanda black', 24376), //product discount is already included in product price and doesn't need to be mapped for PayPal separately
   },
   taxNotIncludedInBasePrice: {
     ...generateLineItemProps('amanda red', 19999), //tax is still included in total gross, so it influences only rounding on ct side
   },
+  //further line items data and carts using it are from sandbox project with totalPriceDiscountDoesNotReduceExternalTax true instead of old default false
+  zeroPriceItem: { ...generateLineItemProps('allO', 0) }, //has price directly set to 0, is not commercetools giftLineItem
+  externalDefault: { ...generateLineItemProps('external', 29900, 25415) },
+};
+
+const giftLineItemData: LineItemGenerationData = {
+  itemType: 'giftLineItem',
+  quantity: 1,
 };
 
 export type LineItemGenerationData = PriceGenerationProps & {
@@ -291,9 +316,9 @@ export type LineItemGenerationData = PriceGenerationProps & {
   lineItemMode?: LineItemMode;
 };
 
-type CartGenerationData = {
+export type CartGenerationData = {
   lineItemsData: LineItemGenerationData[];
-  cardPrice?: PriceGenerationProps;
+  cartPrice?: PriceGenerationProps;
   discount?: DiscountGenerationProps;
   customCardProps?: Partial<CartPropsImportantForMappingTests>;
 };
@@ -314,13 +339,13 @@ export const lineItemFromLineItemData = ({
 
 export const cardFromCardData = ({
   lineItemsData,
-  cardPrice,
+  cartPrice,
   discount,
   customCardProps = {},
 }: CartGenerationData) => ({
   ...defaultRelevantForMappingCTCartParams,
   lineItems: lineItemsData.map(lineItemFromLineItemData),
-  ...fullPriceData(cardPrice ?? lineItemsData[0]),
+  ...fullPriceData(cartPrice ?? lineItemsData[0]),
   discountOnTotalPrice: discount ? discountOnTotalPrice(discount) : undefined,
   ...customCardProps,
 });
@@ -477,7 +502,7 @@ export const discountedCartsData: CartGenerationData[] = [
       },
       giftLineItemData,
     ],
-    cardPrice: { gross: 20127, net: 16913, tax: 3214 },
+    cartPrice: { gross: 20127, net: 16913, tax: 3214 },
     discount: { gross: 3007, net: 2527, amount: 3007 },
   },
   {
@@ -491,7 +516,7 @@ export const discountedCartsData: CartGenerationData[] = [
       },
       giftLineItemData,
     ],
-    cardPrice: { gross: 40253, net: 33826, tax: 6427 },
+    cartPrice: { gross: 40253, net: 33826, tax: 6427 },
     discount: { gross: 6015, net: 5055, amount: 6015 },
   },
   {
@@ -505,7 +530,7 @@ export const discountedCartsData: CartGenerationData[] = [
       },
       giftLineItemData,
     ],
-    cardPrice: { gross: 60380, net: 50739, tax: 9641 },
+    cartPrice: { gross: 60380, net: 50739, tax: 9641 },
     discount: { gross: 9022, net: 7582, amount: 9022 },
   },
 ];
@@ -529,7 +554,7 @@ export const shippedCarts: CartGenerationData[] = [
         tax: 13185,
       },
     ],
-    cardPrice: { net: 78023, gross: 92847, tax: 14824 },
+    cartPrice: { net: 78023, gross: 92847, tax: 14824 },
     discount: { net: 11659, gross: 13874, amount: 12160 },
     customCardProps: {
       shippingInfo: {

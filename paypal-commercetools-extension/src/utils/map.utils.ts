@@ -2,10 +2,12 @@ import {
   Cart,
   LineItem,
   Payment,
+  TaxCalculationMode,
   TransactionState,
   TypedMoney,
 } from '@commercetools/platform-sdk';
 import {
+  AmountBreakdown,
   Item,
   PaymentSourceResponse,
   ShipmentCarrier,
@@ -16,9 +18,6 @@ import {
   RefundStatusEnum,
 } from '../paypal/payments_api';
 import { UpdateActions } from '../types/index.types';
-
-const isLineItemTaxLevel = (taxCalculationMode: string) =>
-  taxCalculationMode === 'LineItemLevel';
 
 const EXPECTED_UPDATE_PAYMENT_ACTIONS_COUNT = 3; //webhook related update actions are setStatusInterfaceCode, setStatusInterfaceText, setMethodInfoMethod and they are not required if payment is already up to date
 export const isPaymentUpToDate = (
@@ -150,31 +149,70 @@ export const mapPayPalPaymentSourceToCommercetoolsMethodInfo = (
   }
 };
 
+/*
+commercetools payment fields related to centAmount could contain gross, net, tax
+and some additional field, for example discountedAmount or totalPrice, we will reference it "amount" here
+
+depending on commercetools tax settings following scenarios are possible:
+- gross/net is 0 or undefined, amount contains actual relevant payment amount
+- gross/net contain actual relevant payment amount, amount is undefined
+- both are undefined (only for line item total price)
+
+relevantCentAmount provides relevant price if it exists, line item total price case is handled separately
+*/
+
+const relevantCentAmount = (
+  defaultCentAmount?: number,
+  fallbackCentAmount?: number
+) => (defaultCentAmount || fallbackCentAmount) ?? 0;
+
+const relevantTotalLineItemPrice = (
+  lineItem: LineItem,
+  roundItemPrice: 'totalGross' | 'totalNet'
+) => {
+  if (lineItem.lineItemMode === 'GiftLineItem') return 0;
+
+  const providedTotalPrice = relevantCentAmount(
+    lineItem.taxedPrice?.[roundItemPrice]?.centAmount,
+    lineItem.totalPrice?.centAmount
+  );
+  return (
+    providedTotalPrice ||
+    (lineItem.price.discounted?.value.centAmount ||
+      lineItem.price.value.centAmount) * lineItem.quantity
+  );
+};
+
+const relevantTotalItemTax = (
+  lineItem: LineItem,
+  roundItemPrice: 'totalGross' | 'totalNet'
+) => {
+  return lineItem.lineItemMode === 'GiftLineItem' ||
+    roundItemPrice === 'totalGross'
+    ? 0
+    : lineItem.taxedPrice?.totalTax?.centAmount ?? 0;
+};
+
+type ItemWithTaxRate = Item & { tax_rate?: string }; //Item tax_rate is not supported by PayPal typescript sdk but required for PUI
+
 const mapCommercetoolsLineItemsToPayPalItems = (
   lineItem: LineItem,
   isShipped: boolean,
-  isLineItemLevel: boolean,
+  roundItemPrice: 'totalGross' | 'totalNet',
   isPayUponInvoice: boolean,
   locale?: string
-) => {
+): ItemWithTaxRate => {
   /* line item price mapping is done in a way: commercetools - item:socks, quantity:7; PayPal - item:socks (x7), quantity:1 to avoid issues with different commercetools rounding modes (if three commercetools items after half even price rounding in total cost 1234 cents - if using mapping with quantity 3, price will be 411,333333333... and total price will not match properly */
 
   const name = lineItem.name[locale ?? Object.keys(lineItem.name)[0]];
-  const relevantPrice = isLineItemLevel
-    ? lineItem.taxedPrice?.totalGross
-    : lineItem.taxedPrice?.totalNet;
 
   const isSingleItem = lineItem.quantity === 1;
   const relevantName = isSingleItem ? name : `${name} (x${lineItem.quantity})`;
-  const relevantTotalItemPrice = relevantPrice
-    ? relevantPrice.centAmount
-    : lineItem.price.value.centAmount * lineItem.quantity;
-
   const currencyCode = lineItem.price.value.currencyCode;
   const fractionDigits = lineItem.price.value.fractionDigits;
 
   const relevantTypedMoney = {
-    centAmount: relevantTotalItemPrice,
+    centAmount: relevantTotalLineItemPrice(lineItem, roundItemPrice),
     fractionDigits,
     currencyCode,
     type: lineItem.price.value.type,
@@ -194,41 +232,38 @@ const mapCommercetoolsLineItemsToPayPalItems = (
     category: isShipped ? 'PHYSICAL_GOODS' : 'DIGITAL_GOODS',
   };
 
-  if (isPayUponInvoice) {
-    //tax and tax rate are required only for Pay Upon Invoice for now,
-    if (isLineItemLevel) {
-      return {
-        ...mappedItem,
-        tax: { value: '0.00', currency_code: currencyCode },
-        tax_rate: '0.00', //in tax LineItemMode mode the tax is already included in item price and should not be separately added
-      };
-    } else {
-      const relevantTaxRate = lineItem.taxRate?.amount
-        ? `${lineItem.taxRate.amount}`
-        : '0.00';
-      return {
-        ...mappedItem,
-        tax: {
-          value: mapCommercetoolsMoneyToPayPalMoney({
-            centAmount: lineItem.taxedPrice?.totalTax?.centAmount ?? 0,
+  //tax and tax rate are required only for Pay Upon Invoice for now
+  if (!isPayUponInvoice) return mappedItem;
+
+  //if total gross is used as total item price or item is a gift - no extra tax is required
+  const taxAmount = relevantTotalItemTax(lineItem, roundItemPrice);
+  return {
+    ...mappedItem,
+    tax: {
+      value: taxAmount
+        ? mapCommercetoolsMoneyToPayPalMoney({
+            centAmount: taxAmount,
             fractionDigits,
             currencyCode,
             type: lineItem.price.value.type,
-          } as TypedMoney),
-          currency_code: currencyCode,
-        },
-        tax_rate: relevantTaxRate,
-      };
-    }
-  }
-
-  return mappedItem;
+          } as TypedMoney)
+        : '0.00',
+      currency_code: currencyCode,
+    },
+    tax_rate:
+      taxAmount && lineItem.taxRate?.amount
+        ? `${lineItem.taxRate.amount}`
+        : '0.00',
+  };
 };
+
+const roundPrice = (taxCalculationMode: string) =>
+  taxCalculationMode === 'LineItemLevel' ? 'totalGross' : 'totalNet';
 
 export const mapValidCommercetoolsLineItemsToPayPalItems = (
   matchingAmounts: boolean,
   isShipped: boolean,
-  taxCalculationMode: string,
+  taxCalculationMode: TaxCalculationMode,
   isPayUponInvoice: boolean,
   lineItems?: LineItem[],
   locale?: string
@@ -240,7 +275,7 @@ export const mapValidCommercetoolsLineItemsToPayPalItems = (
     mapCommercetoolsLineItemsToPayPalItems(
       lineItem,
       isShipped,
-      isLineItemTaxLevel(taxCalculationMode),
+      roundPrice(taxCalculationMode),
       isPayUponInvoice,
       locale
     )
@@ -250,34 +285,36 @@ export const mapValidCommercetoolsLineItemsToPayPalItems = (
     : payPalItems;
 };
 
+type RestrictedAmountBreakdown = Pick<AmountBreakdown, 'discount'> &
+  Required<Pick<AmountBreakdown, 'item_total' | 'tax_total' | 'shipping'>>;
+
 export const mapCommercetoolsCartToPayPalPriceBreakdown = ({
   lineItems,
   discountOnTotalPrice,
   shippingInfo,
   taxCalculationMode,
-}: Cart) => {
+}: Cart): RestrictedAmountBreakdown | undefined => {
   if (!lineItems || !lineItems[0]) {
     return undefined;
   }
   const { currencyCode, fractionDigits, type } = lineItems[0].price.value;
 
-  const isLineItemMode = isLineItemTaxLevel(taxCalculationMode);
-  const roundItemPrice = isLineItemMode ? 'totalGross' : 'totalNet';
-  const relevantTax = isLineItemMode
-    ? 0
-    : lineItems
-        .map((lineItem) => lineItem.taxedPrice?.totalTax?.centAmount ?? 0)
-        .reduce((x, y) => x + y, 0);
+  const roundItemPrice = roundPrice(taxCalculationMode);
+
+  const relevantTax =
+    roundItemPrice === 'totalGross'
+      ? 0
+      : lineItems
+          .map((lineItem) => relevantTotalItemTax(lineItem, roundItemPrice))
+          .reduce((x, y) => x + y, 0);
 
   return {
     item_total: {
       currency_code: currencyCode,
       value: mapCommercetoolsMoneyToPayPalMoney({
         centAmount: lineItems
-          .map(
-            (lineItem) =>
-              lineItem.taxedPrice?.[roundItemPrice]?.centAmount ??
-              lineItem.price.value.centAmount * lineItem.quantity
+          .map((lineItem) =>
+            relevantTotalLineItemPrice(lineItem, roundItemPrice)
           )
           .reduce((x, y) => x + y, 0),
         fractionDigits,
@@ -311,10 +348,10 @@ export const mapCommercetoolsCartToPayPalPriceBreakdown = ({
       ? {
           currency_code: currencyCode,
           value: mapCommercetoolsMoneyToPayPalMoney({
-            centAmount:
-              discountOnTotalPrice.discountedGrossAmount?.centAmount ??
-              discountOnTotalPrice.discountedAmount.centAmount ??
-              0,
+            centAmount: relevantCentAmount(
+              discountOnTotalPrice.discountedGrossAmount?.centAmount,
+              discountOnTotalPrice.discountedAmount.centAmount
+            ),
             fractionDigits,
             currencyCode,
             type,

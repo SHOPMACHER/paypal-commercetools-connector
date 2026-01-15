@@ -395,32 +395,32 @@ describe('Testing valid PayPal breakdown mapping for Pay Upon Invoice only', () 
       'LineItemLevel',
       discountedLineItems,
       [
-        { quantity: '1', amount: '0.00', tax: '0.00' },
-        { quantity: '1', amount: '199.00', tax: '0.00' },
+        { amount: '0.00', tax: '0.00' },
+        { amount: '199.00', tax: '0.00' },
       ],
     ],
     [
       'UnitPriceLevel',
       discountedLineItems,
       [
-        { quantity: '1', amount: '0.00', tax: '0.00' },
-        { quantity: '1', amount: '167.23', tax: '31.77' },
+        { amount: '0.00', tax: '0.00' },
+        { amount: '167.23', tax: '31.77' },
       ],
     ],
     [
       'LineItemLevel',
       cartWithExternalRate.lineItems,
       [
-        { quantity: '1', amount: '185.99', tax: '0.00' },
-        { quantity: '1', amount: '221.33', tax: '0.00' },
+        { amount: '185.99', tax: '0.00' },
+        { amount: '221.33', tax: '0.00' },
       ],
     ],
     [
       'UnitPriceLevel',
       cartWithExternalRate.lineItems,
       [
-        { quantity: '1', amount: '156.29', tax: '29.70' },
-        { quantity: '1', amount: '185.99', tax: '35.34' },
+        { amount: '156.29', tax: '29.70' },
+        { amount: '185.99', tax: '35.34' },
       ],
     ],
     [
@@ -428,7 +428,6 @@ describe('Testing valid PayPal breakdown mapping for Pay Upon Invoice only', () 
       multipleItemsCartWithUnitPriceTaxMode.lineItems,
       [
         {
-          quantity: '1',
           amount: '468.87',
           tax: '89.10',
         },
@@ -444,8 +443,9 @@ describe('Testing valid PayPal breakdown mapping for Pay Upon Invoice only', () 
         true,
         lineItems as LineItem[] | undefined
       );
+      expect(lineItemsMap?.length).toEqual(lineItems.length);
       lineItemsMap?.forEach((item, index) => {
-        expect(item.quantity).toBe(result[index].quantity);
+        expect(item.quantity).toBe('1');
         expect(item.unit_amount.value).toBe(result[index].amount);
         expect(item?.tax?.value).toBe(result[index].tax);
       });

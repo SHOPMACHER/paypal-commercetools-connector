@@ -80,8 +80,15 @@ describe('Test payment source mapping', () => {
   );
 });
 
-describe('Testing mapping of payment between PayPal and Commercetools', () => {
+describe('Testing mapping of payment amounts between PayPal and Commercetools', () => {
   test.each([
+    {
+      commercetoolsMoney: {
+        centAmount: 0,
+        fractionDigits: 2,
+      } as TypedMoney,
+      expectedPayPalAmount: '0.00',
+    },
     {
       commercetoolsMoney: {
         centAmount: 1,
@@ -125,7 +132,7 @@ describe('Testing mapping of payment between PayPal and Commercetools', () => {
       expectedPayPalAmount: '309.7',
     },
   ])(
-    'test mapping of commercetools amount to PayPal amount and vise versa',
+    'test mapping of commercetools amount $commercetoolsMoney.centAmount to PayPal amount $expectedPayPalAmount and vise versa',
     ({ commercetoolsMoney, expectedPayPalAmount }) => {
       expect(mapCommercetoolsMoneyToPayPalMoney(commercetoolsMoney)).toBe(
         expectedPayPalAmount

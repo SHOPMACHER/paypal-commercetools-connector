@@ -204,7 +204,12 @@ const mapCommercetoolsLineItemsToPayPalItems = (
 ): ItemWithTaxRate => {
   /* line item price mapping is done in a way: commercetools - item:socks, quantity:7; PayPal - item:socks (x7), quantity:1 to avoid issues with different commercetools rounding modes (if three commercetools items after half even price rounding in total cost 1234 cents - if using mapping with quantity 3, price will be 411,333333333... and total price will not match properly */
 
-  const name = lineItem.name[locale ?? Object.keys(lineItem.name)[0]];
+  const relevantLocale =
+    locale && locale in lineItem.name ? locale : Object.keys(lineItem.name)[0];
+
+  const name = relevantLocale
+    ? lineItem.name[relevantLocale]
+    : `${lineItem.id}`; //line item name could potentially have no keys at all, but id is always granted
 
   const isSingleItem = lineItem.quantity === 1;
   const relevantName = isSingleItem ? name : `${name} (x${lineItem.quantity})`;

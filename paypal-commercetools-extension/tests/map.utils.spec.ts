@@ -2,6 +2,7 @@ import {
   Cart,
   LineItem,
   Payment,
+  TaxCalculationMode,
   TypedMoney,
 } from '@commercetools/platform-sdk';
 import { describe, test } from '@jest/globals';
@@ -17,21 +18,19 @@ import {
   mapValidCommercetoolsLineItemsToPayPalItems,
 } from '../src/utils/map.utils';
 import {
-  cardFromCardData,
-  cartWithExternalRate,
-  discountedCartsData,
-  discountedLineItems,
+  cartFromCartData,
+  CartGenerationData,
+  complexCartsData,
   dummyValidPaymentStatusData,
   lineItemFromLineItemData,
   LineItemGenerationData,
-  multipleItemsCartWithUnitPriceTaxMode,
+  LineItemTestData,
   paymentStateMappingWithResults,
-  shippedCarts,
-  simpleCartsDataWithLineItemMode,
-  simpleCartsDataWithUnitPriceMode,
+  singleLineItemTypeCartsDataWithMatchingTotal,
+  testLineItemsWithExpectationsExternalTax,
+  testLineItemsWithExpectationsLineItemMode,
+  testLineItemsWithExpectationsUnitPriceMode,
 } from './constants';
-import { Item } from '../src/paypal/checkout_api';
-import { logger } from '../src/utils/logger.utils';
 
 const refundStatusEnum = (status: string) => {
   return status as RefundStatusEnum;
@@ -204,7 +203,7 @@ describe('Testing PayPal breakdown mapping for mapping not possible', () => {
     expect(amountsDoesntMatchMapping).toBeNull();
   });
 
-  test('no valid items leads to null mapped items', () => {
+  test('undefined ct items leads to null mapped items', () => {
     const noLineItemsMapping = mapValidCommercetoolsLineItemsToPayPalItems(
       true,
       true,
@@ -213,6 +212,17 @@ describe('Testing PayPal breakdown mapping for mapping not possible', () => {
       undefined
     );
     expect(noLineItemsMapping).toBeNull();
+  });
+
+  test('no ct items leads to null mapped items', () => {
+    const noLineItemsMapping = mapValidCommercetoolsLineItemsToPayPalItems(
+      true,
+      true,
+      'LineItemLevel',
+      false,
+      [] as LineItem[]
+    );
+    expect(noLineItemsMapping?.length).toEqual(0);
   });
 
   test('negative price of an item leads to null mapped items', () => {
@@ -297,32 +307,31 @@ describe('mapping of valid commercetools items to PayPal items', () => {
     });
   });
 
-  const expectLocaleName = (
-    itemKey: keyof typeof testLineItemsWithExpectationsLineItemMode,
-    expectedName: string,
-    cartLocale?: string
-  ) => {
-    const payPalItems = mapValidCommercetoolsLineItemsToPayPalItems(
-      true,
-      true,
-      'LineItemLevel',
-      false,
-      [
-        lineItemFromLineItemData(
-          testLineItemsWithExpectationsLineItemMode[itemKey]
-        ),
-      ] as LineItem[],
-      cartLocale
-    );
-    expect(payPalItems).toBeDefined();
-
-    if (payPalItems) {
-      expect(payPalItems.length).toEqual(1);
-      expect(payPalItems[0].name).toEqual(expectedName);
-    }
-  };
-
   describe('some name will be provided for whatever locales combination product and cart have', () => {
+    const expectLocaleName = (
+      itemKey: keyof typeof testLineItemsWithExpectationsLineItemMode,
+      expectedName: string,
+      cartLocale?: string
+    ) => {
+      const payPalItems = mapValidCommercetoolsLineItemsToPayPalItems(
+        true,
+        true,
+        'LineItemLevel',
+        false,
+        [
+          lineItemFromLineItemData(
+            testLineItemsWithExpectationsLineItemMode[itemKey]
+          ),
+        ] as LineItem[],
+        cartLocale
+      );
+      expect(payPalItems).toBeDefined();
+
+      if (payPalItems) {
+        expect(payPalItems.length).toEqual(1);
+        expect(payPalItems[0].name).toEqual(expectedName);
+      }
+    };
     test.each([
       [
         'item name has this cart locale',
@@ -351,86 +360,98 @@ describe('mapping of valid commercetools items to PayPal items', () => {
     );
   });
 
-  test.each(Object.values(testLineItemsWithExpectationsLineItemMode))(
-    `for lineItemLevel calculations the item price matches total gross for $testDescription `,
-    (lineItemData) => {
-      expectValidLineItemMapping([lineItemData]);
-    }
-  );
+  describe('test mapping for different tax calculation modes', () => {
+    const expectMappingForTaxModes = (
+      description: string,
+      taxMode: string,
+      data: LineItemTestData
+    ) => {
+      describe(`${description} for ${taxMode}`, () => {
+        test.each(Object.values(data))('$testDescription ', (lineItemData) =>
+          expectValidLineItemMapping([lineItemData], taxMode)
+        );
+      });
+    };
 
-  test.each(Object.values(testLineItemsWithExpectationsUnitPriceMode))(
-    'for UnitPriceLevel calculations the item price matches total net for $testDescription',
-    (lineItemData) => {
-      expectValidLineItemMapping([lineItemData], 'UnitPriceLevel');
-    }
-  );
+    expectMappingForTaxModes(
+      'the item price matches total gross',
+      'LineItemLevel',
+      testLineItemsWithExpectationsLineItemMode
+    );
 
-  test.each(Object.values(testLineItemsWithExpectationsExternalTax))(
-    'for External Tax calculations the item price matches total if provided and (discounted) item price if not for $testDescription',
-    (lineItemData) => {
-      expectValidLineItemMapping([lineItemData], 'LineItemLevel');
-    }
-  );
+    expectMappingForTaxModes(
+      'the item price matches total net',
+      'UnitPriceLevel',
+      testLineItemsWithExpectationsUnitPriceMode
+    );
+
+    expectMappingForTaxModes(
+      'for External Tax calculations the item price matches total if provided and (discounted) item price if not',
+      'LineItemLevel',
+      testLineItemsWithExpectationsExternalTax
+    );
+  });
 });
 
-const expectCartMapping = (
-  cartData: CartGenerationData,
-  expectedDiscount?: number,
-  expectedShipping = 0,
-  expectedTax = 0
-) => {
-  const dummyCart = cartFromCartData(cartData) as Cart;
-  const paypalPrice = mapCommercetoolsCartToPayPalPriceBreakdown(dummyCart);
-  expect(paypalPrice).toBeDefined();
-  if (paypalPrice) {
-    expect(paypalToCTEur(paypalPrice.item_total?.value)).toBeGreaterThanOrEqual(
-      0
-    );
-    if (expectedDiscount === undefined)
-      expect(paypalPrice.discount).toBeUndefined();
-    else {
-      expect(paypalPrice.discount).toBeDefined();
-      expect(paypalToCTEur(paypalPrice.discount?.value)).toEqual(
-        expectedDiscount
+describe('PayPal breakdown mapping', () => {
+  const expectCartMapping = (
+    cartData: CartGenerationData,
+    expectedDiscount?: number,
+    expectedShipping = 0,
+    expectedTax = 0
+  ) => {
+    const dummyCart = cartFromCartData(cartData) as Cart;
+    const paypalPrice = mapCommercetoolsCartToPayPalPriceBreakdown(dummyCart);
+    expect(paypalPrice).toBeDefined();
+    if (paypalPrice) {
+      expect(
+        paypalToCTEur(paypalPrice.item_total?.value)
+      ).toBeGreaterThanOrEqual(0);
+      if (expectedDiscount === undefined)
+        expect(paypalPrice.discount).toBeUndefined();
+      else {
+        expect(paypalPrice.discount).toBeDefined();
+        expect(paypalToCTEur(paypalPrice.discount?.value)).toEqual(
+          expectedDiscount
+        );
+      }
+
+      expect(paypalToCTEur(paypalPrice.shipping?.value)).toEqual(
+        expectedShipping
+      );
+      expect(paypalToCTEur(paypalPrice.tax_total?.value)).toEqual(expectedTax);
+
+      const discountValue = paypalPrice.discount?.value || '0.00';
+
+      expect(dummyCart.totalPrice.centAmount).toBe(
+        paypalToCTEur(paypalPrice.item_total?.value) +
+          paypalToCTEur(paypalPrice.tax_total?.value) +
+          paypalToCTEur(paypalPrice.shipping?.value) -
+          paypalToCTEur(discountValue)
       );
     }
 
-    expect(paypalToCTEur(paypalPrice.shipping?.value)).toEqual(
-      expectedShipping
+    const payPalItems = mapValidCommercetoolsLineItemsToPayPalItems(
+      true,
+      true,
+      dummyCart.taxCalculationMode,
+      false,
+      dummyCart.lineItems
     );
-    expect(paypalToCTEur(paypalPrice.tax_total?.value)).toEqual(expectedTax);
+    expect(payPalItems).toBeDefined();
 
-    const discountValue = paypalPrice.discount?.value || '0.00';
-    expect(dummyCart.totalPrice.centAmount).toBe(
-      paypalToCTEur(paypalPrice.item_total?.value) +
-        paypalToCTEur(paypalPrice.tax_total?.value) +
-        paypalToCTEur(paypalPrice.shipping?.value) -
-        paypalToCTEur(discountValue)
-    );
-  }
+    if (payPalItems) {
+      expect(payPalItems.length).toEqual(dummyCart.lineItems.length);
+      const totalItems = payPalItems
+        .map(
+          ({ quantity, unit_amount }) =>
+            parseInt(quantity) * parseFloat(unit_amount.value)
+        )
+        .reduce((prev, current) => prev + current, 0);
+      expect(totalItems.toFixed(2)).toBe(paypalPrice?.item_total.value);
+    }
+  };
 
-  const payPalItems = mapValidCommercetoolsLineItemsToPayPalItems(
-    true,
-    true,
-    dummyCart.taxCalculationMode,
-    false,
-    dummyCart.lineItems
-  );
-  expect(payPalItems).toBeDefined();
-
-  if (payPalItems) {
-    expect(payPalItems.length).toEqual(dummyCart.lineItems.length);
-    const totalItems = payPalItems
-      .map(
-        ({ quantity, unit_amount }) =>
-          parseInt(quantity) * parseFloat(unit_amount.value)
-      )
-      .reduce((prev, current) => prev + current, 0);
-    expect(totalItems.toFixed(2)).toBe(paypalPrice?.item_total.value);
-  }
-};
-
-describe('PayPal breakdown mapping', () => {
   test.each(singleLineItemTypeCartsDataWithMatchingTotal)(
     'formal breakdown criteria (total price matches total item price, all else is zero or undefined) are fulfilled for cart with $testDescription',
     ({ cartData }) => {
@@ -439,7 +460,7 @@ describe('PayPal breakdown mapping', () => {
   );
 
   test.each(complexCartsData)(
-    'complex carts  if relevant have matching discount, shipping and tax for $testDescription',
+    'complex carts if relevant have matching discount, shipping and tax for $testDescription',
     ({ cartData, expectedDiscount, expectedShipping, expectedTax }) => {
       expectCartMapping(
         cartData,
@@ -448,5 +469,5 @@ describe('PayPal breakdown mapping', () => {
         expectedTax
       );
     }
-  });
+  );
 });

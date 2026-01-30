@@ -740,12 +740,12 @@
     triple-beam "1.4.1"
     winston "3.13.0"
 
-"@commercetools/platform-sdk@^8.18.0":
-  version "8.18.0"
-  resolved "https://registry.yarnpkg.com/@commercetools/platform-sdk/-/platform-sdk-8.18.0.tgz#8dd61ad589c130a8cd1827623a1a0e08506c3eee"
-  integrity sha512-x7jlaYWRsEhKRd0pXuTkLby91PNpHKJDDnJFZt8P+xPNEkzzoCaWxVx1VM89gr8hagPzTwXIjz4vUNb30sFpIQ==
+"@commercetools/platform-sdk@^8.23.0":
+  version "8.23.0"
+  resolved "https://registry.yarnpkg.com/@commercetools/platform-sdk/-/platform-sdk-8.23.0.tgz#1a190a89fff34003b24597d4a5f74c782391d015"
+  integrity sha512-qUqV7ff6qomM57M617/Yma7xR4E/BI2gb0CUry3lFvN3vYXllI0z1rPhCOa8hT5yrPrVYmyWIOQ8hUpSDsWg/g==
   dependencies:
-    "@commercetools/ts-client" "^4.3.0"
+    "@commercetools/ts-client" "^4.8.0"
 
 "@commercetools/sdk-client-v2@^2.0.0":
   version "2.5.0"
@@ -755,10 +755,10 @@
     buffer "^6.0.3"
     node-fetch "^2.6.1"
 
-"@commercetools/ts-client@^4.3.0":
-  version "4.7.0"
-  resolved "https://registry.yarnpkg.com/@commercetools/ts-client/-/ts-client-4.7.0.tgz#86c9e34d13f62427193c6f712e3ab87ffaaebfc4"
-  integrity sha512-UfzV7hWJ1Vu127swOLa62VeRAiIGIXihcUrbOVGsdXtRPGQ/AjsCw1ySqp/cwL99FAGyf6+L7yRQY9snAHZ1DQ==
+"@commercetools/ts-client@^4.8.0":
+  version "4.8.0"
+  resolved "https://registry.yarnpkg.com/@commercetools/ts-client/-/ts-client-4.8.0.tgz#07724fa3922b2ad77fbfc2c3811739588c712716"
+  integrity sha512-rOefPWzhB+JV5pHPGJykvXGrKFDH4W+wHesLEgiaqrMB+iEqe/9cVgB1ogAG4E2VBQlL7drYhlTx/yUE2FQ+mw==
   dependencies:
     buffer "^6.0.3"
 

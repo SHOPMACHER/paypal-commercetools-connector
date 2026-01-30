@@ -70,11 +70,11 @@ export const paymentStateMappingWithResults: PaymentStateMapData[] = [
 
 type RelevantQuantityIndependentLineItemProps = Pick<
   LineItem,
-  'name' | 'lineItemMode'
+  'name' | 'lineItemMode' | 'id'
 > & {
   variant: Pick<ProductVariant, 'sku'>;
   taxRate?: Pick<TaxRate, 'amount'>;
-  price: Pick<Price, 'value'>;
+  price: Pick<Price, 'value' | 'discounted'>;
 };
 
 type TaxedPricePropsImportantForMappingTests = Omit<TaxedPrice, 'taxPortions'>;
@@ -98,7 +98,10 @@ type CartPropsImportantForMappingTests = Pick<
 > & {
   lineItems: LineItemPropsImportantForMappingTests[];
   taxedPrice: TaxedPricePropsImportantForMappingTests;
-  shippingInfo?: { taxedPrice: TaxedPricePropsImportantForMappingTests };
+  shippingInfo?: {
+    taxedPrice?: TaxedPricePropsImportantForMappingTests;
+    price?: CentPrecisionMoney;
+  };
   discountOnTotalPrice?: Omit<DiscountOnTotalPrice, 'includedDiscounts'>;
 };
 
@@ -136,37 +139,6 @@ export const fullPriceData = (priceData: PriceGenerationProps) => ({
   totalPrice: centPrice(priceData.gross ?? 0),
 });
 
-const giftLineItem: LineItemPropsImportantForMappingTests = {
-  name: {
-    en: 'Bag ”Amanda B” Liebeskind brown',
-  },
-  variant: {
-    sku: 'A0E2000000024BC',
-  },
-  price: {
-    value: centPrice(24875),
-  },
-  quantity: 1,
-  lineItemMode: 'GiftLineItem',
-  ...fullPriceData({}),
-};
-
-export const discountedLineitemWithTaxIncluded: LineItemPropsImportantForMappingTests =
-  {
-    ...giftLineItem,
-    price: {
-      value: centPrice(24875),
-    },
-    quantity: 1,
-    lineItemMode: 'Standard',
-    ...fullPriceData({ gross: 19900, net: 16723, tax: 3177 }),
-  };
-
-export const discountedLineItems = [
-  giftLineItem,
-  discountedLineitemWithTaxIncluded,
-];
-
 export const discountOnTotalPrice = ({
   gross,
   net,
@@ -187,113 +159,73 @@ const defaultRelevantForMappingCTCartParams = {
   locale: 'de',
 };
 
-export const cartWithExternalRate: CartPropsImportantForMappingTests = {
-  ...defaultRelevantForMappingCTCartParams,
-  lineItems: [
-    {
-      name: {
-        en: 'Bag ”Amanda B” Liebeskind brown',
-      },
-      variant: {
-        sku: 'A0E2000000024BC',
-      },
-      price: {
-        value: centPrice(19999),
-      },
-      quantity: 1,
-      lineItemMode: 'Standard',
-      ...fullPriceData({ gross: 18599, net: 15629, tax: 2970 }),
-    },
-    {
-      name: {
-        en: 'Bag ”Amanda B” Liebeskind red',
-      },
-      variant: {
-        sku: 'A0E2000000024BD',
-      },
-      price: {
-        value: centPrice(19999),
-      },
-      quantity: 1,
-      lineItemMode: 'Standard',
-      ...fullPriceData({ gross: 22133, net: 18599, tax: 3534 }),
-    },
-  ],
-  ...fullPriceData({ gross: 35437, net: 29778, tax: 5659 }),
-  shippingInfo: { taxedPrice: taxedPrice({}) },
-  discountOnTotalPrice: discountOnTotalPrice({
-    gross: 5295,
-    net: 4836,
-    amount: 4450,
-  }),
-};
-
-export const multipleItemsCartWithUnitPriceTaxMode: CartPropsImportantForMappingTests =
-  {
-    ...defaultRelevantForMappingCTCartParams,
-    lineItems: [
-      {
-        name: {
-          en: 'Bag ”Amanda B” Liebeskind brown',
-        },
-        variant: {
-          sku: 'A0E2000000024BC',
-        },
-        price: {
-          value: centPrice(19999),
-        },
-        quantity: 3,
-        lineItemMode: 'Standard',
-        ...fullPriceData({ gross: 55797, net: 46887, tax: 8910 }),
-      },
-    ],
-    ...fullPriceData({ gross: 48543, net: 40791, tax: 7752 }),
-    discountOnTotalPrice: discountOnTotalPrice({
-      gross: 7254,
-      net: 6096,
-      amount: 7254,
-    }),
-    taxCalculationMode: 'UnitPriceLevel',
-  };
-
 const generateLineItemProps = (
-  referenceName: string,
   itemPrice: number,
-  lineItemMode?: LineItemMode,
-  taxRate = DEFAULT_EU_TAX_RATE
+  referenceName?: string,
+  dsicountedPrice?: number,
+  lineItemMode?: LineItemMode
 ): RelevantQuantityIndependentLineItemProps => ({
-  name: {
-    en: `name${referenceName}`,
-  },
+  name: referenceName
+    ? {
+        en: `name${referenceName}`,
+      }
+    : {},
+  id: `id${itemPrice}`,
   variant: { sku: `sku${referenceName}` },
-  taxRate: { amount: taxRate },
+  taxRate: { amount: DEFAULT_EU_TAX_RATE },
   lineItemMode: lineItemMode ?? 'Standard',
-  price: { value: centPrice(itemPrice) },
+  price: {
+    value: centPrice(itemPrice),
+    discounted: dsicountedPrice
+      ? {
+          value: centPrice(dsicountedPrice),
+          discount: {
+            typeId: 'product-discount',
+            id: 'irrelevantForMapping',
+          },
+        }
+      : undefined,
+  },
 });
 
-const testLineItemsBaseData = {
+const testLineItemsBaseData: {
+  [key: string]: RelevantQuantityIndependentLineItemProps;
+} = {
   //all test data are based on sandbox products, corresponding product can be found by name
-  defaultItem: { ...generateLineItemProps('amanda gray', 22375) }, // default ct item type, included standard EU tax, no discounts
+  defaultItem: { ...generateLineItemProps(22375, 'amanda gray') }, // default ct item type, included standard EU tax, no discounts
   doubleDiscountedItemWithGift: {
-    ...generateLineItemProps('amanda brown', 23134), // this item forces the cart to get total discount
+    ...generateLineItemProps(19999, 'amanda brown', 18599), // this item forces the cart to get total discount
   },
+  giftLineItem: {
+    ...generateLineItemProps(0, 'amanda brown', undefined, 'GiftLineItem'),
+  }, //is automatically added to cart if at least one doubleDiscountedItemWithGift is present, if present quantity is 1 always, if removed once - will never reappear in this cart
   productDiscountItem: {
-    ...generateLineItemProps('amanda black', 24376), //product discount is already included in product price and doesn't need to be mapped for PayPal separately
+    ...generateLineItemProps(24376, 'amanda black'), //product discount is already included in product price and doesn't need to be mapped for PayPal separately
   },
   taxNotIncludedInBasePrice: {
-    ...generateLineItemProps('amanda red', 19999), //tax is still included in total gross, so it influences only rounding on ct side
+    ...generateLineItemProps(19999, 'amanda red', 18599), //tax is still included in total gross, so it influences only rounding on ct side
   },
+  //further line items data and carts using it are from sandbox project with totalPriceDiscountDoesNotReduceExternalTax true instead of old default false
+  zeroPriceItem: { ...generateLineItemProps(0, 'allO') }, //has price directly set to 0, is not commercetools giftLineItem
+  nameless: { ...generateLineItemProps(0) }, //commercetools name is empty object
+  externalDiscounted: { ...generateLineItemProps(29900, 'external', 25415) },
+};
+
+const giftLineItemData: LineItemGenerationData = {
+  itemType: 'giftLineItem',
+  quantity: 1,
 };
 
 export type LineItemGenerationData = PriceGenerationProps & {
   itemType: keyof typeof testLineItemsBaseData;
   quantity: number;
   lineItemMode?: LineItemMode;
+  totalPrice?: CentPrecisionMoney;
 };
 
-type CartGenerationData = {
+export type CartGenerationData = {
   lineItemsData: LineItemGenerationData[];
-  cardPrice?: PriceGenerationProps;
+  cartPrice?: PriceGenerationProps;
   discount?: DiscountGenerationProps;
   customCardProps?: Partial<CartPropsImportantForMappingTests>;
 };
@@ -305,237 +237,302 @@ export const lineItemFromLineItemData = ({
   net,
   tax,
   lineItemMode,
+  totalPrice,
 }: LineItemGenerationData) => ({
   ...testLineItemsBaseData[itemType],
   lineItemMode: lineItemMode ?? 'Standard',
-  quantity: quantity,
   ...fullPriceData({ gross, net, tax }),
+  quantity,
+  totalPrice,
 });
 
-export const cardFromCardData = ({
+type LineItemMapTestData = LineItemGenerationData & {
+  testDescription: string;
+  expectedUnitAmount?: number; //by default 0 is expected
+  expectedTax?: number; // by default 0 is expected
+};
+
+const giftLineItem = {
+  testDescription: 'gift line item',
+  ...giftLineItemData,
+};
+
+const zeroCostItem = (quantity: number) => ({
+  testDescription: `${quantity} item(s) that costs 0`,
+  itemType: 'zeroPriceItem',
+  quantity,
+  expectedUnitAmount: 0,
+  expectedTax: 0,
+});
+
+export type LineItemTestData = {
+  [key: string]: LineItemMapTestData;
+};
+
+/* Gross/net price can differ from item price, because country specific rules were automatically applied by commercetools.
+If gross/net is provided and positive - this is the actual amount commercetools expects customer to pay.*/
+export const testLineItemsWithExpectationsLineItemMode: LineItemTestData = {
+  singleDefault: {
+    testDescription: 'single default item in default mode',
+    itemType: 'defaultItem',
+    quantity: 1,
+    gross: 22375,
+    net: 18803,
+    tax: 3572,
+    expectedUnitAmount: 22375,
+  },
+  singleWithCustomGross: {
+    testDescription: 'single customized item with custom gross price',
+    itemType: 'defaultItem',
+    quantity: 1,
+    gross: 223,
+    net: 18803,
+    tax: 3572,
+    expectedUnitAmount: 223,
+  },
+  threeDefault: {
+    testDescription: 'multiple default items in default mode',
+    gross: 67125,
+    net: 56408,
+    tax: 10717,
+    itemType: 'defaultItem',
+    quantity: 3,
+    expectedUnitAmount: 67125,
+  },
+  singleDoubleDiscounted: {
+    testDescription:
+      'single item with discounts on itself and cart level with a gift',
+    itemType: 'doubleDiscountedItemWithGift',
+    quantity: 1,
+    gross: 22375,
+    net: 18803,
+    tax: 3572,
+    expectedUnitAmount: 22375,
+  },
+  twoProductDiscounted: {
+    testDescription: 'two items with only discount on itself',
+    gross: 48752,
+    net: 40968,
+    tax: 7784,
+    itemType: 'productDiscountItem',
+    quantity: 2,
+    expectedUnitAmount: 48752,
+  },
+  giftLineItem,
+  threeTaxNotIncludedInBasePrice: {
+    testDescription: 'three items with tax not included in base price',
+    gross: 82588,
+    net: 69402,
+    tax: 13186,
+    itemType: 'taxNotIncludedInBasePrice',
+    quantity: 3,
+    expectedUnitAmount: 82588,
+  },
+  zeroCostItem: zeroCostItem(1),
+  nameless: {
+    ...zeroCostItem(1),
+    itemType: 'nameless',
+    testDescription: 'no valid name provided',
+  },
+};
+
+export const testLineItemsWithExpectationsUnitPriceMode: LineItemTestData = {
+  tripleNotIncludedPrice: {
+    testDescription: 'two items with tax not included in base price',
+    gross: 82587,
+    net: 69402,
+    tax: 13185,
+    itemType: 'taxNotIncludedInBasePrice',
+    quantity: 3,
+    expectedUnitAmount: 69402,
+    expectedTax: 13185,
+  },
+  doubleDiscountedItem: {
+    testDescription: 'double discounted item with gift',
+    itemType: 'doubleDiscountedItemWithGift',
+    quantity: 1,
+    gross: 23134,
+    net: 19440,
+    tax: 3694,
+    expectedUnitAmount: 19440,
+    expectedTax: 3694,
+  },
+};
+
+export const testLineItemsWithExpectationsExternalTax = {
+  singleZeroCost: zeroCostItem(0),
+  pluralZeroCost: zeroCostItem(9),
+  singleExternalDiscounted: {
+    testDescription: 'single item with discount and no gross available',
+    itemType: 'externalDiscounted',
+    quantity: 1,
+    expectedUnitAmount: 25415,
+    expectedTax: 0,
+  },
+};
+
+export const cartFromCartData = ({
   lineItemsData,
-  cardPrice,
+  cartPrice,
   discount,
   customCardProps = {},
 }: CartGenerationData) => ({
   ...defaultRelevantForMappingCTCartParams,
   lineItems: lineItemsData.map(lineItemFromLineItemData),
-  ...fullPriceData(cardPrice ?? lineItemsData[0]),
+  ...fullPriceData(cartPrice ?? lineItemsData[0]),
   discountOnTotalPrice: discount ? discountOnTotalPrice(discount) : undefined,
   ...customCardProps,
 });
 
-const giftLineItemData: LineItemGenerationData = {
-  gross: 0,
-  net: 0,
-  tax: 0,
-  itemType: 'doubleDiscountedItemWithGift',
-  quantity: 1,
-  lineItemMode: 'GiftLineItem',
+type CartTestData = {
+  cartData: CartGenerationData;
+  testDescription: string;
+  expectedDiscount?: number;
+  expectedShipping?: number;
+  expectedTax?: number;
 };
 
-export const simpleCartsDataWithLineItemMode: CartGenerationData[] = [
-  //"magic" numbers are extracted from sandbox commercetools products and cards
-  {
-    lineItemsData: [
-      {
-        gross: 22375,
-        net: 18803,
-        tax: 3572,
-        itemType: 'defaultItem',
-        quantity: 1,
-      },
-    ],
-  },
-  {
-    lineItemsData: [
-      {
-        gross: 44750,
-        net: 37605,
-        tax: 7145,
-        itemType: 'defaultItem',
-        quantity: 2,
-      },
-    ],
-  },
-  {
-    lineItemsData: [
-      {
-        gross: 67125,
-        net: 56408,
-        tax: 10717,
-        itemType: 'defaultItem',
-        quantity: 3,
-      },
-    ],
-  },
-  {
-    lineItemsData: [
-      {
-        gross: 24376,
-        net: 20484,
-        tax: 3892,
-        itemType: 'productDiscountItem',
-        quantity: 1,
-      },
-    ],
-  },
-  {
-    lineItemsData: [
-      {
-        gross: 48752,
-        net: 40968,
-        tax: 7784,
-        itemType: 'productDiscountItem',
-        quantity: 2,
-      },
-    ],
-  },
-  {
-    lineItemsData: [
-      {
-        gross: 73128,
-        net: 61452,
-        tax: 11676,
-        itemType: 'productDiscountItem',
-        quantity: 3,
-      },
-    ],
-  },
-  {
-    lineItemsData: [
-      {
-        gross: 27529,
-        net: 23134,
-        tax: 4395,
-        itemType: 'taxNotIncludedInBasePrice',
-        quantity: 1,
-      },
-    ],
-  },
-  {
-    lineItemsData: [
-      {
-        gross: 55059,
-        net: 46268,
-        tax: 8791,
-        itemType: 'taxNotIncludedInBasePrice',
-        quantity: 2,
-      },
-    ],
-  },
+export const singleLineItemTypeCartsDataWithMatchingTotal: CartTestData[] = [
+  ...Object.values(testLineItemsWithExpectationsLineItemMode),
+  ...Object.values(testLineItemsWithExpectationsUnitPriceMode),
+  testLineItemsWithExpectationsExternalTax.singleZeroCost,
+  testLineItemsWithExpectationsExternalTax.pluralZeroCost,
+].map((value) => ({
+  testDescription: value.testDescription,
+  cartData: { lineItemsData: [value] },
+}));
 
+export const complexCartsData: CartTestData[] = [
   {
-    lineItemsData: [
-      {
-        gross: 82588,
-        net: 69402,
-        tax: 13186,
-        itemType: 'taxNotIncludedInBasePrice',
-        quantity: 3,
-      },
-    ],
-  },
-];
-
-export const simpleCartsDataWithUnitPriceMode: CartGenerationData[] = [
-  {
-    customCardProps: { taxCalculationMode: 'UnitPriceLevel' },
-    lineItemsData: [
-      {
-        gross: 55058,
-        net: 46268,
-        tax: 8790,
-        itemType: 'taxNotIncludedInBasePrice',
-        quantity: 2,
-      },
-    ],
-  },
-  {
-    customCardProps: { taxCalculationMode: 'UnitPriceLevel' },
-    lineItemsData: [
-      {
-        gross: 82587,
-        net: 69402,
-        tax: 13185,
-        itemType: 'taxNotIncludedInBasePrice',
-        quantity: 3,
-      },
-    ],
-  },
-];
-
-export const discountedCartsData: CartGenerationData[] = [
-  {
-    lineItemsData: [
-      {
-        gross: 23134,
-        net: 19440,
-        tax: 3694,
-        itemType: 'doubleDiscountedItemWithGift',
-        quantity: 1,
-      },
-      giftLineItemData,
-    ],
-    cardPrice: { gross: 20127, net: 16913, tax: 3214 },
-    discount: { gross: 3007, net: 2527, amount: 3007 },
-  },
-  {
-    lineItemsData: [
-      {
-        gross: 46268,
-        net: 38881,
-        tax: 7387,
-        itemType: 'doubleDiscountedItemWithGift',
-        quantity: 2,
-      },
-      giftLineItemData,
-    ],
-    cardPrice: { gross: 40253, net: 33826, tax: 6427 },
-    discount: { gross: 6015, net: 5055, amount: 6015 },
-  },
-  {
-    lineItemsData: [
-      {
-        gross: 69402,
-        net: 58321,
-        tax: 11081,
-        itemType: 'doubleDiscountedItemWithGift',
-        quantity: 3,
-      },
-      giftLineItemData,
-    ],
-    cardPrice: { gross: 60380, net: 50739, tax: 9641 },
-    discount: { gross: 9022, net: 7582, amount: 9022 },
-  },
-];
-
-export const shippedCarts: CartGenerationData[] = [
-  {
-    lineItemsData: [
-      {
-        itemType: 'doubleDiscountedItemWithGift',
-        quantity: 1,
-        gross: 23134,
-        net: 19440,
-        tax: 3694,
-      },
-      giftLineItemData,
-      {
-        itemType: 'taxNotIncludedInBasePrice',
-        quantity: 3,
-        gross: 82587,
-        net: 69402,
-        tax: 13185,
-      },
-    ],
-    cardPrice: { net: 78023, gross: 92847, tax: 14824 },
-    discount: { net: 11659, gross: 13874, amount: 12160 },
-    customCardProps: {
-      shippingInfo: {
-        taxedPrice: taxedPrice({ gross: 1000, net: 840, tax: 160 }),
-      },
-      taxCalculationMode: 'UnitPriceLevel',
+    cartData: {
+      lineItemsData: [
+        testLineItemsWithExpectationsUnitPriceMode.doubleDiscountedItem,
+        giftLineItem,
+      ],
+      cartPrice: { gross: 20127, net: 16913, tax: 3214 },
+      discount: { gross: 3007, net: 2527, amount: 3007 },
     },
+    testDescription: 'item with two discounts and gift',
+    expectedDiscount: 3007,
+  },
+  {
+    cartData: {
+      lineItemsData: [
+        {
+          itemType: 'doubleDiscountedItemWithGift',
+          gross: 18599,
+          net: 18599,
+          tax: 0,
+          quantity: 1,
+        },
+        giftLineItem,
+      ],
+      discount: { amount: 2418 },
+      customCardProps: {
+        taxCalculationMode: 'UnitPriceLevel',
+        totalPrice: centPrice(16181),
+      },
+    },
+    testDescription:
+      'item with two discounts and gift with unit price level set on cart',
+    expectedDiscount: 2418,
+    expectedTax: 0,
+  },
+  {
+    cartData: {
+      lineItemsData: [
+        {
+          itemType: 'taxNotIncludedInBasePrice',
+          quantity: 3,
+          totalPrice: centPrice(55797),
+        },
+        {
+          itemType: 'doubleDiscountedItemWithGift',
+          quantity: 1,
+          totalPrice: centPrice(18599),
+        },
+        giftLineItem,
+      ],
+      cartPrice: {},
+      discount: { amount: 9671 },
+      customCardProps: { totalPrice: centPrice(64725) },
+    },
+    testDescription:
+      'item with two discounts and gift and item with external tax',
+    expectedDiscount: 9671,
+  },
+  {
+    testDescription: 'two items with a gift and cart discount',
+    cartData: {
+      lineItemsData: [
+        {
+          gross: 46268,
+          net: 38881,
+          tax: 7387,
+          itemType: 'doubleDiscountedItemWithGift',
+          quantity: 2,
+        },
+        giftLineItemData,
+      ],
+      cartPrice: { gross: 40253, net: 33826, tax: 6427 },
+      discount: { gross: 6015, net: 5055, amount: 6015 },
+    },
+    expectedDiscount: 6015,
+  },
+  {
+    testDescription: 'threee items with a gift and cart discount',
+    cartData: {
+      lineItemsData: [
+        {
+          gross: 69402,
+          net: 58321,
+          tax: 11081,
+          itemType: 'doubleDiscountedItemWithGift',
+          quantity: 3,
+        },
+        giftLineItemData,
+      ],
+      cartPrice: { gross: 60380, net: 50739, tax: 9641 },
+      discount: { gross: 9022, net: 7582, amount: 9022 },
+    },
+    expectedDiscount: 9022,
+  },
+  {
+    testDescription: 'external amount tax with discount',
+    cartData: {
+      lineItemsData: [
+        testLineItemsWithExpectationsExternalTax.singleExternalDiscounted,
+      ],
+      discount: { amount: 2262 },
+      customCardProps: {
+        taxMode: 'ExternalAmount',
+        taxCalculationMode: 'LineItemLevel',
+        totalPrice: centPrice(73153),
+        shippingInfo: { price: centPrice(50000) },
+      },
+    },
+    expectedDiscount: 2262,
+    expectedShipping: 50000,
+  },
+  {
+    cartData: {
+      lineItemsData: [
+        testLineItemsWithExpectationsUnitPriceMode.doubleDiscountedItem,
+        giftLineItem,
+        testLineItemsWithExpectationsUnitPriceMode.tripleNotIncludedPrice,
+      ],
+      cartPrice: { net: 78023, gross: 92847, tax: 14824 },
+      discount: { net: 11659, gross: 13874, amount: 12160 },
+      customCardProps: {
+        shippingInfo: {
+          taxedPrice: taxedPrice({ gross: 1000, net: 840, tax: 160 }),
+        },
+        taxCalculationMode: 'UnitPriceLevel',
+      },
+    },
+    testDescription: 'multiple different items in unit price level',
+    expectedDiscount: 13874,
+    expectedShipping: 1000,
+    expectedTax: 16879,
   },
 ];

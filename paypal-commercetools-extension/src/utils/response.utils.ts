@@ -39,7 +39,6 @@ export const handleRequest = (
       },
     });
   }
-  logger.info(`${requestName} request: ${stringifyData(request)}`);
   return updateActions;
 };
 
@@ -100,7 +99,7 @@ export const handleCustomerResponse = (
   return updateActions;
 };
 
-export const removeEmptyProperties = (response: any) => {
+const removeEmptyProperties = (response: any) => {
   for (const prop in response) {
     if (response[prop] === null) {
       delete response[prop];
@@ -143,7 +142,9 @@ function parseErrorMessage(error: any, requestName: string) {
 
 export const handleError = (
   requestName: string,
+  entityId: string,
   error: any,
+  entityType: 'payment' | 'customer' = 'payment',
   transactionId?: string
 ): UpdateActions => {
   const payPalDebugId =
@@ -151,7 +152,7 @@ export const handleError = (
       ? error?.response?.headers['paypal-debug-id']
       : undefined;
   logger.error(
-    `Call to ${requestName} resulted in an error` +
+    `Call to ${requestName} resulted in an error for ${entityType} with id ${entityId}` +
       (payPalDebugId ? ` (paypalDebugId: ${payPalDebugId})` : ''),
     error?.response?.data ?? error
   );
@@ -174,4 +175,50 @@ export const handleError = (
 
 export function sleep(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+const skipRemoveEmptyProperties = (requestName: string) =>
+  !['getUserIDToken', 'getUserIDToken'].some((item) => item === requestName);
+
+export async function handleEntityActions(
+  entityID: string,
+  requestName: string,
+  request: StringOrObject,
+  handleResponse: () => Promise<{
+    response: StringOrObject;
+    extraActions?: UpdateActions;
+  }>,
+  entityType: 'payment' | 'customer' = 'payment'
+) {
+  const isPayment = entityType === 'payment';
+  const updateActions = handleRequest(
+    requestName,
+    request,
+    skipRemoveEmptyProperties(requestName),
+    isPayment
+  );
+
+  const entityLogData = `for ${entityType}${isPayment ? ` ${entityID} ` : ''}`;
+  logger.info(
+    `${requestName} request ${entityLogData}leads to ${updateActions.length} update actions`
+  );
+  try {
+    const { response, extraActions } = await handleResponse();
+    if (typeof response === 'object' && 'status' in response)
+      logger.info(`${requestName} PayPal response status ${response.status}`);
+    const responseActions = isPayment
+      ? handlePaymentResponse(requestName, response)
+      : handleCustomerResponse(requestName, response);
+
+    logger.info(
+      `${requestName} ${entityLogData}response success, leads to ${
+        responseActions.length
+      } log response actions and ${
+        extraActions?.length ?? 0
+      } additional actions`
+    );
+    return updateActions.concat(responseActions, extraActions ?? []);
+  } catch (e) {
+    return handleError(requestName, entityID, e, entityType);
+  }
 }

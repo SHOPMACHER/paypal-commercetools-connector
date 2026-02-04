@@ -5,17 +5,21 @@ import validator from 'validator';
 import { Capture, Order, Refund } from '../src/paypal/checkout_api';
 import { PayPalSettings, UpdateActions } from '../src/types/index.types';
 import { logger } from '../src/utils/logger.utils';
+import {
+  cartFromCartData,
+  complexCartsData,
+  longTestTimeoutMs,
+} from './constants';
 
 let configMock: any;
+
+const mockCart = cartFromCartData(complexCartsData[0].cartData);
 
 const mockConfigModule = () => {
   jest.mock('../src/service/commercetools.service', () => ({
     getCart: jest.fn(() => {
       return {
-        locale: 'en',
-        lineItems: discountedLineItems,
-        ...prices,
-        discountOnTotalPrice,
+        ...mockCart,
         billingAddress: {
           postalCode: '12345',
           country: 'DE',
@@ -43,12 +47,6 @@ const mockConfigModule = () => {
 mockConfigModule();
 
 import { paymentController } from '../src/controllers/payments.controller';
-import {
-  discountedLineItems,
-  discountedLineitemWithTaxIncluded,
-  discountOnTotalPrice,
-  prices,
-} from './constants';
 import { getCart } from '../src/service/commercetools.service';
 
 const amountPlanned = {
@@ -73,35 +71,39 @@ const customFieldCreateOrder = {
   },
 };
 
-const EXPECTED_CART_CENT_AMOUNT = 19400;
-const EXPECTED_LESS_THAN_CART_CENT_AMOUNT = 4200;
+const EXPECTED_CART_CENT_AMOUNT = mockCart.taxedPrice.totalGross.centAmount;
+const EXPECTED_LESS_THAN_CART_CENT_AMOUNT = EXPECTED_CART_CENT_AMOUNT - 1; //one cent less
 
 describe('Testing Braintree GetClient Token', () => {
-  test('create client token', async () => {
-    const paymentRequest = {
-      obj: {
-        custom: {
-          fields: {
-            getClientTokenRequest: '{}',
+  test(
+    'create client token',
+    async () => {
+      const paymentRequest = {
+        obj: {
+          custom: {
+            fields: {
+              getClientTokenRequest: '{}',
+            },
           },
         },
-      },
-    } as unknown as PaymentReference;
-    const paymentResponse = await paymentController('Update', paymentRequest);
-    expect(paymentResponse).toBeDefined();
-    expect(paymentResponse).toHaveProperty('statusCode', 200);
-    const getClientTokenResponse = paymentResponse?.actions.find(
-      (action) => action.name === 'getClientTokenResponse'
-    );
-    expect(getClientTokenResponse).toBeDefined();
-    expect(getClientTokenResponse?.name).toBe('getClientTokenResponse');
-    const token = getClientTokenResponse?.value;
-    expect(validator.isBase64(token)).toBeTruthy();
-    const data = JSON.parse(Buffer.from(token, 'base64').toString());
-    expect(data).toBeDefined();
-    expect(data).toHaveProperty('braintree');
-    expect(data).toHaveProperty('paypal');
-  }, 20000);
+      } as unknown as PaymentReference;
+      const paymentResponse = await paymentController('Update', paymentRequest);
+      expect(paymentResponse).toBeDefined();
+      expect(paymentResponse).toHaveProperty('statusCode', 200);
+      const getClientTokenResponse = paymentResponse?.actions.find(
+        (action) => action.name === 'getClientTokenResponse'
+      );
+      expect(getClientTokenResponse).toBeDefined();
+      expect(getClientTokenResponse?.name).toBe('getClientTokenResponse');
+      const token = getClientTokenResponse?.value;
+      expect(validator.isBase64(token)).toBeTruthy();
+      const data = JSON.parse(Buffer.from(token, 'base64').toString());
+      expect(data).toBeDefined();
+      expect(data).toHaveProperty('braintree');
+      expect(data).toHaveProperty('paypal');
+    },
+    longTestTimeoutMs
+  );
 });
 
 function expectSuccessfulResponse(
@@ -216,7 +218,7 @@ describe('Create Pay Upon Invoice orders for LineItemLevel cart tax', () => {
     ],
     [EXPECTED_CART_CENT_AMOUNT, 'DEVICE_DATA_NOT_AVAILABLE'],
   ])(
-    'attempt to pay %p if the cart is 19400 cents and invalid fraud ned id leads to backend error containing %p',
+    `attempt to pay %p if the cart is ${EXPECTED_CART_CENT_AMOUNT} cents and invalid fraud ned id leads to backend error containing %p`,
     async (actualCentAmountPlanned, expectedError) => {
       try {
         await paymentController(
@@ -249,8 +251,8 @@ async function createValidTransaction(customAmount?: number) {
       id: randomUUID(),
     },
   } as any;
-  let paymentResponse = await paymentController('Update', paymentRequest);
-  let payPalOrder = expectSuccessfulResponse(paymentResponse);
+  const paymentResponse = await paymentController('Update', paymentRequest);
+  const payPalOrder = expectSuccessfulResponse(paymentResponse);
   expect(payPalOrder).toHaveProperty('status', 'CREATED');
   return { paymentRequest, payPalOrder, customInvoiceId };
 }
@@ -341,9 +343,9 @@ async function completeValidOrder(
 }
 
 const amountPlannedCentsWithTestResult: [number, string, string][] = [
-  [EXPECTED_CART_CENT_AMOUNT, 'same as cart', '194.00'],
+  [EXPECTED_CART_CENT_AMOUNT, 'same as cart', '201.27'],
   [200000, 'more than in cart', '2000.00'],
-  [EXPECTED_LESS_THAN_CART_CENT_AMOUNT, 'less than in cart', '42.00'],
+  [EXPECTED_LESS_THAN_CART_CENT_AMOUNT, 'less than in cart', '201.26'],
 ];
 
 describe('Testing PayPal aftersales', () => {
@@ -381,7 +383,7 @@ describe('Testing PayPal aftersales', () => {
       EXPECTED_CART_CENT_AMOUNT
     );
     (getCart as jest.Mock).mockReturnValueOnce({
-      lineItems: [discountedLineitemWithTaxIncluded],
+      lineItems: mockCart.lineItems[0],
     });
     paymentRequest.obj = {
       ...paymentRequest.obj,

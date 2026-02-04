@@ -1,9 +1,115 @@
 import {
   Cart,
   CentPrecisionMoney,
+  DiscountOnTotalPrice,
   LineItem,
-  ProductDiscountReference,
+  LineItemMode,
+  Payment,
+  Price,
+  ProductVariant,
+  TaxedPrice,
+  TaxRate,
 } from '@commercetools/platform-sdk';
+import { UpdateActions } from '../src/types/index.types';
+
+type PaymentStateMapData = [string, UpdateActions, boolean];
+
+export const dummyValidPaymentStatusData: Pick<
+  Payment,
+  'paymentStatus' | 'paymentMethodInfo'
+> = {
+  paymentStatus: { interfaceCode: 'code1', interfaceText: 'text1' },
+  paymentMethodInfo: { method: 'method1' },
+};
+
+const upToDateDummyActions = [
+  {
+    action: 'setMethodInfoMethod',
+    method: dummyValidPaymentStatusData.paymentMethodInfo.method,
+  },
+  {
+    action: 'setStatusInterfaceText',
+    interfaceText: dummyValidPaymentStatusData.paymentStatus.interfaceText,
+  },
+  {
+    action: 'setStatusInterfaceCode',
+    interfaceCode: dummyValidPaymentStatusData.paymentStatus.interfaceCode,
+  },
+];
+
+const dummyInvalidActionParams = {
+  method: 'different',
+  interfaceText: 'different',
+  interfaceCode: 'different',
+};
+
+export const paymentStateMappingWithResults: PaymentStateMapData[] = [
+  ['different amount of actions', [], false],
+  ...upToDateDummyActions.map(
+    ({ action }, index) =>
+      [
+        `action ${action} missing`,
+        upToDateDummyActions.map((item, index2) =>
+          index2 === index ? { action: 'irrelevant action' } : item
+        ),
+        false,
+      ] as PaymentStateMapData
+  ),
+  ...upToDateDummyActions.map(
+    ({ action }, index) =>
+      [
+        `action ${action} params differ from current payment`,
+        upToDateDummyActions.map((item, index2) =>
+          index2 === index ? { action, ...dummyInvalidActionParams } : item
+        ),
+        false,
+      ] as PaymentStateMapData
+  ),
+  ['up to date payment', upToDateDummyActions, true],
+];
+
+type RelevantQuantityIndependentLineItemProps = Pick<
+  LineItem,
+  'name' | 'lineItemMode' | 'id'
+> & {
+  variant: Pick<ProductVariant, 'sku'>;
+  taxRate?: Pick<TaxRate, 'amount'>;
+  price: Pick<Price, 'value' | 'discounted'>;
+};
+
+type TaxedPricePropsImportantForMappingTests = Omit<TaxedPrice, 'taxPortions'>;
+
+type LineItemPropsImportantForMappingTests =
+  RelevantQuantityIndependentLineItemProps &
+    Pick<LineItem, 'quantity' | 'totalPrice'> & {
+      taxedPrice: TaxedPricePropsImportantForMappingTests;
+    };
+
+type CartPropsImportantForMappingTests = Pick<
+  Cart,
+  | 'totalPrice'
+  | 'taxCalculationMode'
+  | 'taxMode'
+  | 'taxRoundingMode'
+  | 'priceRoundingMode'
+  | 'directDiscounts'
+  | 'discountCodes'
+  | 'locale'
+> & {
+  lineItems: LineItemPropsImportantForMappingTests[];
+  taxedPrice: TaxedPricePropsImportantForMappingTests;
+  shippingInfo?: {
+    taxedPrice?: TaxedPricePropsImportantForMappingTests;
+    price?: CentPrecisionMoney;
+  };
+  discountOnTotalPrice?: Omit<DiscountOnTotalPrice, 'includedDiscounts'>;
+};
+
+type PriceGenerationProps = { gross?: number; net?: number; tax?: number };
+
+type DiscountGenerationProps = { gross?: number; net?: number; amount: number };
+
+export const longTestTimeoutMs = 20000;
 
 const currencyData: Omit<CentPrecisionMoney, 'centAmount'> = {
   type: 'centPrecision',
@@ -11,711 +117,422 @@ const currencyData: Omit<CentPrecisionMoney, 'centAmount'> = {
   fractionDigits: 2,
 };
 
-const taxedPrice = {
-  totalNet: {
-    ...currencyData,
-    centAmount: 16303,
-  },
-  totalGross: {
-    ...currencyData,
-    centAmount: 19400,
-  },
-  totalTax: {
-    ...currencyData,
-    centAmount: 3097,
-  },
-};
-
-export const prices = {
-  totalPrice: {
-    ...currencyData,
-    centAmount: 19400,
-  },
-  taxedPrice,
-};
-
-const total0: CentPrecisionMoney = {
+const centPrice = (centAmount = 0): CentPrecisionMoney => ({
   ...currencyData,
-  centAmount: 0,
-};
+  centAmount,
+});
 
-const total5Eur = {
-  ...currencyData,
-  centAmount: 500,
-};
+const taxedPrice = ({
+  gross = 0,
+  net = 0,
+  tax = 0,
+}: PriceGenerationProps): TaxedPricePropsImportantForMappingTests => ({
+  totalGross: centPrice(gross),
+  totalNet: centPrice(net),
+  totalTax: centPrice(tax),
+});
 
-const discountProductPercent: ProductDiscountReference = {
-  typeId: 'product-discount',
-  id: 'b63ef66f-809f-4959-b72b-7cb449cfc259',
-};
+const DEFAULT_EU_TAX_RATE = 0.19;
 
-type LineItemWithoutPriceDetails = Omit<
-  LineItem,
-  | 'price'
-  | 'id'
-  | 'quantity'
-  | 'totalPrice'
-  | 'discountedPricePerQuantity'
-  | 'taxedPricePortions'
-  | 'lineItemMode'
->;
+export const fullPriceData = (priceData: PriceGenerationProps) => ({
+  taxedPrice: taxedPrice(priceData),
+  totalPrice: centPrice(priceData.gross ?? 0),
+});
 
-const discountedProductWithTaxIncluded: LineItemWithoutPriceDetails = {
-  productId: '47708631-7f05-4881-8d9b-9563c567f1e3',
-  productKey: '80736',
-  name: {
-    en: 'Bag ”Amanda B” Liebeskind brown',
-    de: 'Tasche „Amanda B” Liebeskind braun',
-  },
-  productType: {
-    typeId: 'product-type',
-    id: '5caccab5-9af3-461f-9643-ee5870e9ea10',
-  },
-  productSlug: {
-    en: 'liebeskind-bag-amanda-b-brown',
-    de: 'liebeskind-tasche-amanda-b-braun',
-  },
-  variant: {
-    id: 1,
-    sku: 'A0E2000000024BC',
-    key: 'A0E2000000024BC',
-  },
-  taxRate: {
-    name: '19% incl.',
-    amount: 0.19,
-    includedInPrice: true,
-    country: 'DE',
-    id: 'ztfE6U8r',
-    subRates: [],
-  },
-  perMethodTaxRate: [],
-  addedAt: '2024-12-05T13:45:51.792Z',
-  lastModifiedAt: '2024-12-05T13:45:51.792Z',
-  state: [
-    {
-      quantity: 1,
-      state: {
-        typeId: 'state',
-        id: '7a8d376f-4298-48ca-b442-df93bae0978e',
-      },
-    },
-  ],
-  priceMode: 'Platform',
-};
+export const discountOnTotalPrice = ({
+  gross,
+  net,
+  amount,
+}: DiscountGenerationProps) => ({
+  discountedAmount: centPrice(amount),
+  discountedNetAmount: net ? centPrice(net) : undefined,
+  discountedGrossAmount: gross ? centPrice(gross) : undefined,
+});
 
-const giftLineItem: LineItem = {
-  id: '45e9ee9f-9d6b-4e01-934b-b794cc303995',
-  ...discountedProductWithTaxIncluded,
-  price: {
-    id: '3a828cda-165c-4a67-b610-19cb8339fe98',
-    value: {
-      type: 'centPrecision',
-      currencyCode: 'EUR',
-      centAmount: 24875,
-      fractionDigits: 2,
-    },
-    discounted: {
-      value: {
-        type: 'centPrecision',
-        currencyCode: 'EUR',
-        centAmount: 19900,
-        fractionDigits: 2,
-      },
-      discount: {
-        typeId: 'product-discount',
-        id: 'b63ef66f-809f-4959-b72b-7cb449cfc259',
-      },
-    },
-  },
-  quantity: 1,
-  discountedPricePerQuantity: [
-    {
-      quantity: 1,
-      discountedPrice: {
-        value: total0,
-        includedDiscounts: [
-          {
-            discount: {
-              typeId: 'cart-discount',
-              id: '9d8110ff-037b-4c5a-b7ec-cce61dd6f598',
-            },
-            discountedAmount: {
-              type: 'centPrecision',
-              currencyCode: 'EUR',
-              centAmount: 19900,
-              fractionDigits: 2,
-            },
-          },
-        ],
-      },
-    },
-  ],
-  lineItemMode: 'GiftLineItem',
-  totalPrice: total0,
-  taxedPrice: {
-    totalNet: total0,
-    totalGross: total0,
-    taxPortions: [
-      {
-        rate: 0.19,
-        amount: total0,
-        name: '19% incl.',
-      },
-    ],
-    totalTax: total0,
-  },
-  taxedPricePortions: [],
-};
-
-export const discountedLineitemWithTaxIncluded: LineItem = {
-  id: 'cfb73a1a-3884-4e01-b435-dce4c5ebea79',
-  ...discountedProductWithTaxIncluded,
-  price: {
-    id: '3a828cda-165c-4a67-b610-19cb8339fe98',
-    value: {
-      type: 'centPrecision',
-      currencyCode: 'EUR',
-      centAmount: 24875,
-      fractionDigits: 2,
-    },
-    discounted: {
-      value: {
-        type: 'centPrecision',
-        currencyCode: 'EUR',
-        centAmount: 19900,
-        fractionDigits: 2,
-      },
-      discount: discountProductPercent,
-    },
-  },
-  quantity: 1,
-  discountedPricePerQuantity: [],
-  lineItemMode: 'Standard',
-  totalPrice: {
-    type: 'centPrecision',
-    currencyCode: 'EUR',
-    centAmount: 19900,
-    fractionDigits: 2,
-  },
-  taxedPrice: {
-    totalNet: {
-      type: 'centPrecision',
-      currencyCode: 'EUR',
-      centAmount: 16723,
-      fractionDigits: 2,
-    },
-    totalGross: {
-      type: 'centPrecision',
-      currencyCode: 'EUR',
-      centAmount: 19900,
-      fractionDigits: 2,
-    },
-    taxPortions: [
-      {
-        rate: 0.19,
-        amount: {
-          type: 'centPrecision',
-          currencyCode: 'EUR',
-          centAmount: 3177,
-          fractionDigits: 2,
-        },
-        name: '19% incl.',
-      },
-    ],
-    totalTax: {
-      type: 'centPrecision',
-      currencyCode: 'EUR',
-      centAmount: 3177,
-      fractionDigits: 2,
-    },
-  },
-  taxedPricePortions: [],
-};
-
-export const discountedLineItems: LineItem[] = [
-  giftLineItem,
-  discountedLineitemWithTaxIncluded,
-];
-
-export const discountOnTotalPrice = {
-  discountedAmount: total5Eur,
-  includedDiscounts: [
-    {
-      discount: {
-        typeId: 'cart-discount',
-        id: 'c4b96843-e2ae-4c3c-987e-7c9819a13a40',
-      },
-      discountedAmount: total5Eur,
-    },
-  ],
-  discountedNetAmount: {
-    type: 'centPrecision',
-    currencyCode: 'EUR',
-    centAmount: 420,
-    fractionDigits: 2,
-  },
-  discountedGrossAmount: total5Eur,
-};
-
-export const cartWithExternalRate: Cart = {
-  id: '0d675b6f-e026-4ff8-aa4f-69a7308d4a26',
-  version: 270,
-  createdAt: '2025-02-13T12:03:53.423Z',
-  lastModifiedAt: '2025-02-17T10:09:40.474Z',
-  lastModifiedBy: {
-    clientId: 'seJiutIQQgFYw_vafgdcXCt5',
-  },
-  createdBy: { clientId: 'seJiutIQQgFYw_vafgdcXCt5' },
-  customerEmail: 'asd@df.asd',
-  anonymousId: '93d87ba5-01ea-4b30-04e3-599ef868cc59',
-  locale: 'en',
-  lineItems: [
-    {
-      id: 'fca9f426-8d97-4168-87df-63886abfbcb8',
-      productId: '47708631-7f05-4881-8d9b-9563c567f1e3',
-      productKey: '80736',
-      name: {
-        en: 'Bag ”Amanda B” Liebeskind brown',
-        de: 'Tasche „Amanda B” Liebeskind braun',
-      },
-      productType: {
-        typeId: 'product-type',
-        id: '5caccab5-9af3-461f-9643-ee5870e9ea10',
-      },
-      productSlug: {
-        en: 'liebeskind-bag-amanda-b-brown',
-        de: 'liebeskind-tasche-amanda-b-braun',
-      },
-      variant: {
-        id: 1,
-        sku: 'A0E2000000024BC',
-        key: 'A0E2000000024BC',
-      },
-      price: {
-        id: '0d623977-dc7e-4e16-9690-dea4121274ee',
-        value: {
-          type: 'centPrecision',
-          currencyCode: 'EUR',
-          centAmount: 19999,
-          fractionDigits: 2,
-        },
-        country: 'DE',
-        discounted: {
-          value: {
-            type: 'centPrecision',
-            currencyCode: 'EUR',
-            centAmount: 18599,
-            fractionDigits: 2,
-          },
-          discount: discountProductPercent,
-        },
-      },
-      quantity: 1,
-      discountedPricePerQuantity: [],
-      taxRate: {
-        name: '19% incl.',
-        amount: 0.19,
-        includedInPrice: true,
-        country: 'DE',
-        id: 'ztfE6U8r',
-        subRates: [],
-      },
-      perMethodTaxRate: [],
-      addedAt: '2025-02-13T14:06:31.109Z',
-      lastModifiedAt: '2025-02-13T14:06:31.109Z',
-      state: [
-        {
-          quantity: 1,
-          state: {
-            typeId: 'state',
-            id: '7a8d376f-4298-48ca-b442-df93bae0978e',
-          },
-        },
-      ],
-      priceMode: 'Platform',
-      lineItemMode: 'Standard',
-      totalPrice: {
-        type: 'centPrecision',
-        currencyCode: 'EUR',
-        centAmount: 18599,
-        fractionDigits: 2,
-      },
-      taxedPrice: {
-        totalNet: {
-          type: 'centPrecision',
-          currencyCode: 'EUR',
-          centAmount: 15629,
-          fractionDigits: 2,
-        },
-        totalGross: {
-          type: 'centPrecision',
-          currencyCode: 'EUR',
-          centAmount: 18599,
-          fractionDigits: 2,
-        },
-        taxPortions: [
-          {
-            rate: 0.19,
-            amount: {
-              type: 'centPrecision',
-              currencyCode: 'EUR',
-              centAmount: 2970,
-              fractionDigits: 2,
-            },
-            name: '19% incl.',
-          },
-        ],
-        totalTax: {
-          type: 'centPrecision',
-          currencyCode: 'EUR',
-          centAmount: 2970,
-          fractionDigits: 2,
-        },
-      },
-      taxedPricePortions: [],
-    },
-    {
-      id: '700c548d-7300-4d04-86d8-e7208a469b55',
-      productId: 'bf14fc2e-4e39-435d-a213-36a424540eb6',
-      productKey: '80737',
-      name: {
-        en: 'Bag ”Amanda B” Liebeskind red',
-        de: 'Tasche „Amanda B” Liebeskind rot',
-      },
-      productType: {
-        typeId: 'product-type',
-        id: '5caccab5-9af3-461f-9643-ee5870e9ea10',
-      },
-      productSlug: {
-        en: 'liebeskind-bag-amanda-b-red',
-        de: 'liebeskind-tasche-amanda-b-rot',
-      },
-      variant: {
-        id: 1,
-        sku: 'A0E2000000024BD',
-        key: 'A0E2000000024BD',
-      },
-      price: {
-        id: '8f4d5f07-6a94-4f9f-b578-697463d42078',
-        value: {
-          type: 'centPrecision',
-          currencyCode: 'EUR',
-          centAmount: 19999,
-          fractionDigits: 2,
-        },
-        country: 'DE',
-        discounted: {
-          value: {
-            type: 'centPrecision',
-            currencyCode: 'EUR',
-            centAmount: 18599,
-            fractionDigits: 2,
-          },
-          discount: {
-            typeId: 'product-discount',
-            id: 'aef33a28-eb9a-46e8-b68b-7fc1c6d01830',
-          },
-        },
-      },
-      quantity: 1,
-      discountedPricePerQuantity: [],
-      taxRate: {
-        name: 'not-in-price-tax-category',
-        amount: 0.19,
-        includedInPrice: false,
-        country: 'DE',
-        id: 'qcBEaLs2',
-        subRates: [],
-      },
-      perMethodTaxRate: [],
-      addedAt: '2025-02-13T14:24:30.523Z',
-      lastModifiedAt: '2025-02-13T14:24:30.523Z',
-      state: [
-        {
-          quantity: 1,
-          state: {
-            typeId: 'state',
-            id: '7a8d376f-4298-48ca-b442-df93bae0978e',
-          },
-        },
-      ],
-      priceMode: 'Platform',
-      lineItemMode: 'Standard',
-      totalPrice: {
-        type: 'centPrecision',
-        currencyCode: 'EUR',
-        centAmount: 18599,
-        fractionDigits: 2,
-      },
-      taxedPrice: {
-        totalNet: {
-          type: 'centPrecision',
-          currencyCode: 'EUR',
-          centAmount: 18599,
-          fractionDigits: 2,
-        },
-        totalGross: {
-          type: 'centPrecision',
-          currencyCode: 'EUR',
-          centAmount: 22133,
-          fractionDigits: 2,
-        },
-        taxPortions: [
-          {
-            rate: 0.19,
-            amount: {
-              type: 'centPrecision',
-              currencyCode: 'EUR',
-              centAmount: 3534,
-              fractionDigits: 2,
-            },
-            name: 'not-in-price-tax-category',
-          },
-        ],
-        totalTax: {
-          type: 'centPrecision',
-          currencyCode: 'EUR',
-          centAmount: 3534,
-          fractionDigits: 2,
-        },
-      },
-      taxedPricePortions: [],
-    },
-  ],
-  cartState: 'Active',
-  totalPrice: {
-    type: 'centPrecision',
-    currencyCode: 'EUR',
-    centAmount: 32362,
-    fractionDigits: 2,
-  },
-  taxedPrice: {
-    totalNet: {
-      type: 'centPrecision',
-      currencyCode: 'EUR',
-      centAmount: 29778,
-      fractionDigits: 2,
-    },
-    totalGross: {
-      type: 'centPrecision',
-      currencyCode: 'EUR',
-      centAmount: 35437,
-      fractionDigits: 2,
-    },
-    taxPortions: [
-      {
-        rate: 0.19,
-        amount: {
-          type: 'centPrecision',
-          currencyCode: 'EUR',
-          centAmount: 2970,
-          fractionDigits: 2,
-        },
-        name: '19% incl.',
-      },
-      {
-        rate: 0.19,
-        amount: {
-          type: 'centPrecision',
-          currencyCode: 'EUR',
-          centAmount: 3534,
-          fractionDigits: 2,
-        },
-        name: 'not-in-price-tax-category',
-      },
-    ],
-    totalTax: {
-      type: 'centPrecision',
-      currencyCode: 'EUR',
-      centAmount: 5659,
-      fractionDigits: 2,
-    },
-  },
-  country: 'DE',
-  taxedShippingPrice: {
-    totalNet: {
-      type: 'centPrecision',
-      currencyCode: 'EUR',
-      centAmount: 0,
-      fractionDigits: 2,
-    },
-    totalGross: {
-      type: 'centPrecision',
-      currencyCode: 'EUR',
-      centAmount: 0,
-      fractionDigits: 2,
-    },
-    taxPortions: [
-      {
-        rate: 0.19,
-        amount: {
-          type: 'centPrecision',
-          currencyCode: 'EUR',
-          centAmount: 0,
-          fractionDigits: 2,
-        },
-        name: '19% incl.',
-      },
-    ],
-    totalTax: {
-      type: 'centPrecision',
-      currencyCode: 'EUR',
-      centAmount: 0,
-      fractionDigits: 2,
-    },
-  },
-  discountOnTotalPrice: {
-    discountedAmount: {
-      type: 'centPrecision',
-      currencyCode: 'EUR',
-      centAmount: 4836,
-      fractionDigits: 2,
-    },
-    includedDiscounts: [
-      {
-        discount: {
-          typeId: 'cart-discount',
-          id: 'c4b96843-e2ae-4c3c-987e-7c9819a13a40',
-        },
-        discountedAmount: {
-          type: 'centPrecision',
-          currencyCode: 'EUR',
-          centAmount: 4836,
-          fractionDigits: 2,
-        },
-      },
-    ],
-    discountedNetAmount: {
-      type: 'centPrecision',
-      currencyCode: 'EUR',
-      centAmount: 4450,
-      fractionDigits: 2,
-    },
-    discountedGrossAmount: {
-      type: 'centPrecision',
-      currencyCode: 'EUR',
-      centAmount: 5295,
-      fractionDigits: 2,
-    },
-  },
-  shippingMode: 'Single',
-  shippingInfo: {
-    shippingMethodName: 'Standard EU',
-    price: {
-      type: 'centPrecision',
-      currencyCode: 'EUR',
-      centAmount: 0,
-      fractionDigits: 2,
-    },
-    shippingRate: {
-      price: {
-        type: 'centPrecision',
-        currencyCode: 'EUR',
-        centAmount: 0,
-        fractionDigits: 2,
-      },
-      freeAbove: {
-        type: 'centPrecision',
-        currencyCode: 'EUR',
-        centAmount: 20000,
-        fractionDigits: 2,
-      },
-      tiers: [],
-    },
-    taxRate: {
-      name: '19% incl.',
-      amount: 0.19,
-      includedInPrice: true,
-      country: 'DE',
-      id: 'ztfE6U8r',
-      subRates: [],
-    },
-    taxCategory: {
-      typeId: 'tax-category',
-      id: 'e10f3742-c379-4a27-be01-6529676bd542',
-    },
-    deliveries: [],
-    shippingMethod: {
-      typeId: 'shipping-method',
-      id: '5eae0359-c347-4d51-b4ae-fba64a7d8221',
-    },
-    taxedPrice: {
-      totalNet: {
-        type: 'centPrecision',
-        currencyCode: 'EUR',
-        centAmount: 0,
-        fractionDigits: 2,
-      },
-      totalGross: {
-        type: 'centPrecision',
-        currencyCode: 'EUR',
-        centAmount: 0,
-        fractionDigits: 2,
-      },
-      taxPortions: [
-        {
-          rate: 0.19,
-          amount: {
-            type: 'centPrecision',
-            currencyCode: 'EUR',
-            centAmount: 0,
-            fractionDigits: 2,
-          },
-          name: '19% incl.',
-        },
-      ],
-      totalTax: {
-        type: 'centPrecision',
-        currencyCode: 'EUR',
-        centAmount: 0,
-        fractionDigits: 2,
-      },
-    },
-    shippingMethodState: 'MatchesCart',
-  },
-  shippingAddress: {
-    firstName: 'sad',
-    lastName: 'asd',
-    streetName: 'asd',
-    streetNumber: 'asd',
-    postalCode: '12345',
-    city: 'asd',
-    country: 'DE',
-  },
-  shipping: [],
-  customLineItems: [],
+const defaultRelevantForMappingCTCartParams = {
+  priceRoundingMode: 'HalfEven',
   discountCodes: [],
   directDiscounts: [],
-  paymentInfo: {
-    payments: [
-      { typeId: 'payment', id: 'd11c67e1-721d-4d95-a7c0-18f151cf4217' },
-      { typeId: 'payment', id: '51f0b602-d4f2-4faf-a8c9-33b9900702f4' },
-      { typeId: 'payment', id: '5c286d43-4760-4bd9-a76d-537b4eb792cc' },
-      { typeId: 'payment', id: '175b6cb7-e469-4053-9bd4-40a397417a52' },
-      { typeId: 'payment', id: 'bd374bda-999d-43a8-be0a-8e39694e3a85' },
-      { typeId: 'payment', id: 'a5a0ebcd-7c65-432e-a438-15a71d35e552' },
-      { typeId: 'payment', id: '1990ad61-079d-4990-8cca-9eda9bf47dea' },
-      { typeId: 'payment', id: '70583c70-cec6-40e5-b882-f1656b73f23a' },
-    ],
-  },
-  inventoryMode: 'ReserveOnOrder',
   taxMode: 'Platform',
   taxRoundingMode: 'HalfEven',
   taxCalculationMode: 'LineItemLevel',
-  deleteDaysAfterLastModification: 90,
-  refusedGifts: [
-    { typeId: 'cart-discount', id: '9d8110ff-037b-4c5a-b7ec-cce61dd6f598' },
-  ],
-  origin: 'Customer',
-  billingAddress: {
-    firstName: 'sad',
-    lastName: 'asd',
-    streetName: 'asd',
-    streetNumber: 'asd',
-    postalCode: '12345',
-    city: 'asd',
-    country: 'DE',
-  },
-  itemShippingAddresses: [],
-  totalLineItemQuantity: 2,
+  locale: 'de',
 };
+
+const generateLineItemProps = (
+  itemPrice: number,
+  referenceName?: string,
+  dsicountedPrice?: number,
+  lineItemMode?: LineItemMode
+): RelevantQuantityIndependentLineItemProps => ({
+  name: referenceName
+    ? {
+        en: `name${referenceName}`,
+      }
+    : {},
+  id: `id${itemPrice}`,
+  variant: { sku: `sku${referenceName}` },
+  taxRate: { amount: DEFAULT_EU_TAX_RATE },
+  lineItemMode: lineItemMode ?? 'Standard',
+  price: {
+    value: centPrice(itemPrice),
+    discounted: dsicountedPrice
+      ? {
+          value: centPrice(dsicountedPrice),
+          discount: {
+            typeId: 'product-discount',
+            id: 'irrelevantForMapping',
+          },
+        }
+      : undefined,
+  },
+});
+
+const testLineItemsBaseData: {
+  [key: string]: RelevantQuantityIndependentLineItemProps;
+} = {
+  //all test data are based on sandbox products, corresponding product can be found by name
+  defaultItem: { ...generateLineItemProps(22375, 'amanda gray') }, // default ct item type, included standard EU tax, no discounts
+  doubleDiscountedItemWithGift: {
+    ...generateLineItemProps(19999, 'amanda brown', 18599), // this item forces the cart to get total discount
+  },
+  giftLineItem: {
+    ...generateLineItemProps(0, 'amanda brown', undefined, 'GiftLineItem'),
+  }, //is automatically added to cart if at least one doubleDiscountedItemWithGift is present, if present quantity is 1 always, if removed once - will never reappear in this cart
+  productDiscountItem: {
+    ...generateLineItemProps(24376, 'amanda black'), //product discount is already included in product price and doesn't need to be mapped for PayPal separately
+  },
+  taxNotIncludedInBasePrice: {
+    ...generateLineItemProps(19999, 'amanda red', 18599), //tax is still included in total gross, so it influences only rounding on ct side
+  },
+  //further line items data and carts using it are from sandbox project with totalPriceDiscountDoesNotReduceExternalTax true instead of old default false
+  zeroPriceItem: { ...generateLineItemProps(0, 'allO') }, //has price directly set to 0, is not commercetools giftLineItem
+  nameless: { ...generateLineItemProps(0) }, //commercetools name is empty object
+  externalDiscounted: { ...generateLineItemProps(29900, 'external', 25415) },
+};
+
+const giftLineItemData: LineItemGenerationData = {
+  itemType: 'giftLineItem',
+  quantity: 1,
+};
+
+export type LineItemGenerationData = PriceGenerationProps & {
+  itemType: keyof typeof testLineItemsBaseData;
+  quantity: number;
+  lineItemMode?: LineItemMode;
+  totalPrice?: CentPrecisionMoney;
+};
+
+export type CartGenerationData = {
+  lineItemsData: LineItemGenerationData[];
+  cartPrice?: PriceGenerationProps;
+  discount?: DiscountGenerationProps;
+  customCardProps?: Partial<CartPropsImportantForMappingTests>;
+};
+
+export const lineItemFromLineItemData = ({
+  itemType,
+  quantity,
+  gross,
+  net,
+  tax,
+  lineItemMode,
+  totalPrice,
+}: LineItemGenerationData) => ({
+  ...testLineItemsBaseData[itemType],
+  lineItemMode: lineItemMode ?? 'Standard',
+  ...fullPriceData({ gross, net, tax }),
+  quantity,
+  totalPrice,
+});
+
+type LineItemMapTestData = LineItemGenerationData & {
+  testDescription: string;
+  expectedUnitAmount?: number; //by default 0 is expected
+  expectedTax?: number; // by default 0 is expected
+};
+
+const giftLineItem = {
+  testDescription: 'gift line item',
+  ...giftLineItemData,
+};
+
+const zeroCostItem = (quantity: number) => ({
+  testDescription: `${quantity} item(s) that costs 0`,
+  itemType: 'zeroPriceItem',
+  quantity,
+  expectedUnitAmount: 0,
+  expectedTax: 0,
+});
+
+export type LineItemTestData = {
+  [key: string]: LineItemMapTestData;
+};
+
+/* Gross/net price can differ from item price, because country specific rules were automatically applied by commercetools.
+If gross/net is provided and positive - this is the actual amount commercetools expects customer to pay.*/
+export const testLineItemsWithExpectationsLineItemMode: LineItemTestData = {
+  singleDefault: {
+    testDescription: 'single default item in default mode',
+    itemType: 'defaultItem',
+    quantity: 1,
+    gross: 22375,
+    net: 18803,
+    tax: 3572,
+    expectedUnitAmount: 22375,
+  },
+  singleWithCustomGross: {
+    testDescription: 'single customized item with custom gross price',
+    itemType: 'defaultItem',
+    quantity: 1,
+    gross: 223,
+    net: 18803,
+    tax: 3572,
+    expectedUnitAmount: 223,
+  },
+  threeDefault: {
+    testDescription: 'multiple default items in default mode',
+    gross: 67125,
+    net: 56408,
+    tax: 10717,
+    itemType: 'defaultItem',
+    quantity: 3,
+    expectedUnitAmount: 67125,
+  },
+  singleDoubleDiscounted: {
+    testDescription:
+      'single item with discounts on itself and cart level with a gift',
+    itemType: 'doubleDiscountedItemWithGift',
+    quantity: 1,
+    gross: 22375,
+    net: 18803,
+    tax: 3572,
+    expectedUnitAmount: 22375,
+  },
+  twoProductDiscounted: {
+    testDescription: 'two items with only discount on itself',
+    gross: 48752,
+    net: 40968,
+    tax: 7784,
+    itemType: 'productDiscountItem',
+    quantity: 2,
+    expectedUnitAmount: 48752,
+  },
+  giftLineItem,
+  threeTaxNotIncludedInBasePrice: {
+    testDescription: 'three items with tax not included in base price',
+    gross: 82588,
+    net: 69402,
+    tax: 13186,
+    itemType: 'taxNotIncludedInBasePrice',
+    quantity: 3,
+    expectedUnitAmount: 82588,
+  },
+  zeroCostItem: zeroCostItem(1),
+  nameless: {
+    ...zeroCostItem(1),
+    itemType: 'nameless',
+    testDescription: 'no valid name provided',
+  },
+};
+
+export const testLineItemsWithExpectationsUnitPriceMode: LineItemTestData = {
+  tripleNotIncludedPrice: {
+    testDescription: 'two items with tax not included in base price',
+    gross: 82587,
+    net: 69402,
+    tax: 13185,
+    itemType: 'taxNotIncludedInBasePrice',
+    quantity: 3,
+    expectedUnitAmount: 69402,
+    expectedTax: 13185,
+  },
+  doubleDiscountedItem: {
+    testDescription: 'double discounted item with gift',
+    itemType: 'doubleDiscountedItemWithGift',
+    quantity: 1,
+    gross: 23134,
+    net: 19440,
+    tax: 3694,
+    expectedUnitAmount: 19440,
+    expectedTax: 3694,
+  },
+};
+
+export const testLineItemsWithExpectationsExternalTax = {
+  singleZeroCost: zeroCostItem(0),
+  pluralZeroCost: zeroCostItem(9),
+  singleExternalDiscounted: {
+    testDescription: 'single item with discount and no gross available',
+    itemType: 'externalDiscounted',
+    quantity: 1,
+    expectedUnitAmount: 25415,
+    expectedTax: 0,
+  },
+};
+
+export const cartFromCartData = ({
+  lineItemsData,
+  cartPrice,
+  discount,
+  customCardProps = {},
+}: CartGenerationData) => ({
+  ...defaultRelevantForMappingCTCartParams,
+  lineItems: lineItemsData.map(lineItemFromLineItemData),
+  ...fullPriceData(cartPrice ?? lineItemsData[0]),
+  discountOnTotalPrice: discount ? discountOnTotalPrice(discount) : undefined,
+  ...customCardProps,
+});
+
+type CartTestData = {
+  cartData: CartGenerationData;
+  testDescription: string;
+  expectedDiscount?: number;
+  expectedShipping?: number;
+  expectedTax?: number;
+};
+
+export const singleLineItemTypeCartsDataWithMatchingTotal: CartTestData[] = [
+  ...Object.values(testLineItemsWithExpectationsLineItemMode),
+  ...Object.values(testLineItemsWithExpectationsUnitPriceMode),
+  testLineItemsWithExpectationsExternalTax.singleZeroCost,
+  testLineItemsWithExpectationsExternalTax.pluralZeroCost,
+].map((value) => ({
+  testDescription: value.testDescription,
+  cartData: { lineItemsData: [value] },
+}));
+
+export const complexCartsData: CartTestData[] = [
+  {
+    cartData: {
+      lineItemsData: [
+        testLineItemsWithExpectationsUnitPriceMode.doubleDiscountedItem,
+        giftLineItem,
+      ],
+      cartPrice: { gross: 20127, net: 16913, tax: 3214 },
+      discount: { gross: 3007, net: 2527, amount: 3007 },
+    },
+    testDescription: 'item with two discounts and gift',
+    expectedDiscount: 3007,
+  },
+  {
+    cartData: {
+      lineItemsData: [
+        {
+          itemType: 'doubleDiscountedItemWithGift',
+          gross: 18599,
+          net: 18599,
+          tax: 0,
+          quantity: 1,
+        },
+        giftLineItem,
+      ],
+      discount: { amount: 2418 },
+      customCardProps: {
+        taxCalculationMode: 'UnitPriceLevel',
+        totalPrice: centPrice(16181),
+      },
+    },
+    testDescription:
+      'item with two discounts and gift with unit price level set on cart',
+    expectedDiscount: 2418,
+    expectedTax: 0,
+  },
+  {
+    cartData: {
+      lineItemsData: [
+        {
+          itemType: 'taxNotIncludedInBasePrice',
+          quantity: 3,
+          totalPrice: centPrice(55797),
+        },
+        {
+          itemType: 'doubleDiscountedItemWithGift',
+          quantity: 1,
+          totalPrice: centPrice(18599),
+        },
+        giftLineItem,
+      ],
+      cartPrice: {},
+      discount: { amount: 9671 },
+      customCardProps: { totalPrice: centPrice(64725) },
+    },
+    testDescription:
+      'item with two discounts and gift and item with external tax',
+    expectedDiscount: 9671,
+  },
+  {
+    testDescription: 'two items with a gift and cart discount',
+    cartData: {
+      lineItemsData: [
+        {
+          gross: 46268,
+          net: 38881,
+          tax: 7387,
+          itemType: 'doubleDiscountedItemWithGift',
+          quantity: 2,
+        },
+        giftLineItemData,
+      ],
+      cartPrice: { gross: 40253, net: 33826, tax: 6427 },
+      discount: { gross: 6015, net: 5055, amount: 6015 },
+    },
+    expectedDiscount: 6015,
+  },
+  {
+    testDescription: 'threee items with a gift and cart discount',
+    cartData: {
+      lineItemsData: [
+        {
+          gross: 69402,
+          net: 58321,
+          tax: 11081,
+          itemType: 'doubleDiscountedItemWithGift',
+          quantity: 3,
+        },
+        giftLineItemData,
+      ],
+      cartPrice: { gross: 60380, net: 50739, tax: 9641 },
+      discount: { gross: 9022, net: 7582, amount: 9022 },
+    },
+    expectedDiscount: 9022,
+  },
+  {
+    testDescription: 'external amount tax with discount',
+    cartData: {
+      lineItemsData: [
+        testLineItemsWithExpectationsExternalTax.singleExternalDiscounted,
+      ],
+      discount: { amount: 2262 },
+      customCardProps: {
+        taxMode: 'ExternalAmount',
+        taxCalculationMode: 'LineItemLevel',
+        totalPrice: centPrice(73153),
+        shippingInfo: { price: centPrice(50000) },
+      },
+    },
+    expectedDiscount: 2262,
+    expectedShipping: 50000,
+  },
+  {
+    cartData: {
+      lineItemsData: [
+        testLineItemsWithExpectationsUnitPriceMode.doubleDiscountedItem,
+        giftLineItem,
+        testLineItemsWithExpectationsUnitPriceMode.tripleNotIncludedPrice,
+      ],
+      cartPrice: { net: 78023, gross: 92847, tax: 14824 },
+      discount: { net: 11659, gross: 13874, amount: 12160 },
+      customCardProps: {
+        shippingInfo: {
+          taxedPrice: taxedPrice({ gross: 1000, net: 840, tax: 160 }),
+        },
+        taxCalculationMode: 'UnitPriceLevel',
+      },
+    },
+    testDescription: 'multiple different items in unit price level',
+    expectedDiscount: 13874,
+    expectedShipping: 1000,
+    expectedTax: 16879,
+  },
+];

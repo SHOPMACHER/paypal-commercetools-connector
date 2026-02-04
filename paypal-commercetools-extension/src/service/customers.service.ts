@@ -5,13 +5,7 @@ import {
   SetupTokenRequest,
   TokenIdRequestTypeEnum,
 } from '../paypal/vault_api';
-import { UpdateActions } from '../types/index.types';
-import { logger } from '../utils/logger.utils';
-import {
-  handleCustomerResponse,
-  handleError,
-  handleRequest,
-} from '../utils/response.utils';
+import { handleEntityActions } from '../utils/response.utils';
 import {
   createPaymentToken,
   createVaultSetupToken,
@@ -26,21 +20,21 @@ export async function handleGetUserIDTokenRequest(customer: Customer) {
     return [];
   }
   const customerId = customer?.custom?.fields?.PayPalUserId;
-  const updateActions = handleRequest(
-    'getUserIDToken',
-    { customerId },
-    undefined,
-    false
-  );
-  try {
+
+  const handleResponse = async () => {
     const response = await generateUserIdToken(customerId);
-    return updateActions.concat(
-      handleCustomerResponse('getUserIDToken', response)
-    );
-  } catch (e) {
-    logger.error('Call to getUserIDToken resulted in an error', e);
-    return handleError('getUserIDToken', e);
-  }
+    return { response };
+  };
+
+  return handleEntityActions(
+    customerId,
+    'getUserIDToken',
+    {
+      customerId,
+    },
+    handleResponse,
+    'customer'
+  );
 }
 
 export async function handleDeletePaymentTokenRequest(customer: Customer) {
@@ -48,21 +42,18 @@ export async function handleDeletePaymentTokenRequest(customer: Customer) {
   if (!paymentToken) {
     return [];
   }
-  const updateActions = handleRequest(
+  const handleResponse = async () => {
+    const response = (await deletePaymentToken(paymentToken)) ?? '';
+    return { response };
+  };
+
+  return handleEntityActions(
+    customer.id,
     'deletePaymentToken',
     { paymentToken },
-    undefined,
-    false
+    handleResponse,
+    'customer'
   );
-  try {
-    const response = await deletePaymentToken(paymentToken);
-    return updateActions.concat(
-      handleCustomerResponse('deletePaymentToken', response ?? '')
-    );
-  } catch (e) {
-    logger.error('Call to deletePaymentToken resulted in an error', e);
-    return handleError('deletePaymentToken', e);
-  }
 }
 
 export const handleCreateVaultSetupTokenRequest = async (
@@ -82,30 +73,28 @@ export const handleCreateVaultSetupTokenRequest = async (
       ...request,
     };
   }
-  logger.info(JSON.stringify(request));
 
-  const updateActions: UpdateActions = handleRequest(
+  const handleResponse = async () => {
+    const response = await createVaultSetupToken(request);
+    const extraActions = response.customer?.id
+      ? [
+          {
+            action: 'setCustomField',
+            name: 'PayPalUserId',
+            value: response.customer?.id,
+          },
+        ]
+      : undefined;
+    return { response, extraActions };
+  };
+
+  return handleEntityActions(
+    customer.id,
     'createVaultSetupToken',
     request,
-    true,
-    false
+    handleResponse,
+    'customer'
   );
-  try {
-    const response = await createVaultSetupToken(request);
-    logger.info(JSON.stringify(response));
-    if (response.customer?.id) {
-      updateActions.push({
-        action: 'setCustomField',
-        name: 'PayPalUserId',
-        value: response.customer?.id,
-      });
-    }
-    return updateActions.concat(
-      handleCustomerResponse('createVaultSetupToken', response)
-    );
-  } catch (e) {
-    return handleError('createVaultSetupToken', e);
-  }
 };
 
 export const handleCreatePaymentTokenRequest = async (
@@ -127,29 +116,28 @@ export const handleCreatePaymentTokenRequest = async (
       },
     },
   };
-  logger.info(JSON.stringify(request));
-  const updateActions: UpdateActions = handleRequest(
+
+  const handleResponse = async () => {
+    const response = await createPaymentToken(request);
+    const extraActions = response.customer?.id
+      ? [
+          {
+            action: 'setCustomField',
+            name: 'PayPalUserId',
+            value: response.customer?.id,
+          },
+        ]
+      : undefined;
+    return { response, extraActions };
+  };
+
+  return handleEntityActions(
+    customer.id,
     'createPaymentToken',
     request,
-    true,
-    false
+    handleResponse,
+    'customer'
   );
-  try {
-    const response = await createPaymentToken(request);
-    logger.info(JSON.stringify(response));
-    if (response.customer?.id) {
-      updateActions.push({
-        action: 'setCustomField',
-        name: 'PayPalUserId',
-        value: response.customer?.id,
-      });
-    }
-    return updateActions.concat(
-      handleCustomerResponse('createPaymentToken', response)
-    );
-  } catch (e) {
-    return handleError('createPaymentToken', e);
-  }
 };
 
 export const handleGetPaymentTokensRequest = async (
@@ -159,22 +147,20 @@ export const handleGetPaymentTokensRequest = async (
     return [];
   }
   const customerId = customer?.custom?.fields?.PayPalUserId;
-  const updateActions: UpdateActions = handleRequest(
-    'getPaymentTokens',
-    { customerId },
-    true,
-    false
-  );
-  try {
+
+  const handleResponse = async () => {
     const response = await getPaymentTokens(customerId);
     response.payment_tokens = response.payment_tokens?.filter(
       ({ payment_source }) => payment_source && !('apple_pay' in payment_source)
     );
-    logger.info(JSON.stringify(response));
-    return updateActions.concat(
-      handleCustomerResponse('getPaymentTokens', response)
-    );
-  } catch (e) {
-    return handleError('getPaymentTokens', e);
-  }
+    return { response };
+  };
+
+  return handleEntityActions(
+    customer.id,
+    'getPaymentTokens',
+    { customerId },
+    handleResponse,
+    'customer'
+  );
 };
